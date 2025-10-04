@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, History, User } from "lucide-react";
+import { Home, History, User, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,6 +18,11 @@ export function Navbar() {
       href: "/",
       icon: Home,
       label: "Home",
+    },
+    {
+      href: "/feed",
+      icon: Film,
+      label: "Feed",
     },
     {
       href: "/history",

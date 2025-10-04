@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { SocketProvider } from '@/lib/socket-context'
 import { BottomTabs } from '@/components/bottom-tabs'
 import { PWAInit } from '@/components/pwa-init'
+import { AdSystemInit } from '@/components/ad-system-init'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -44,6 +45,7 @@ export default function RootLayout({
         >
           <SocketProvider>
             <PWAInit />
+            <AdSystemInit />
             <div className="pb-16">
               {children}
             </div>
