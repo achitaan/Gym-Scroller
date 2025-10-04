@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { ExerciseItem } from "@/components/ExerciseItem";
 import { Navbar } from "@/components/Navbar";
-import { ArrowLeft, Clock, TrendingUp } from "lucide-react";
+import { RestPeriodShorts } from "@/components/RestPeriodShorts";
+import { ArrowLeft, Clock, TrendingUp, Film } from "lucide-react";
 import { getAllWorkouts, calculateWorkoutVolume } from "@/lib/mock-data";
 import { Set, Workout } from "@/lib/hevy-types";
 
@@ -32,6 +33,7 @@ export default function WorkoutDetail() {
   const [restTimer, setRestTimer] = useState(0);
   const [isRestTimerActive, setIsRestTimerActive] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [showRestShorts, setShowRestShorts] = useState(false);
 
   useEffect(() => {
     const allWorkouts = getAllWorkouts();
@@ -134,7 +136,18 @@ export default function WorkoutDetail() {
             <Clock className="h-5 w-5" />
             <span className="font-semibold">Rest Timer</span>
           </div>
-          <div className="text-2xl font-bold">{restTimer}s</div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-white hover:bg-white/20"
+              onClick={() => setShowRestShorts(true)}
+            >
+              <Film className="h-4 w-4 mr-2" />
+              Watch Short
+            </Button>
+            <div className="text-2xl font-bold">{restTimer}s</div>
+          </div>
         </div>
       )}
 
@@ -201,6 +214,12 @@ export default function WorkoutDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Rest Period Shorts */}
+      <RestPeriodShorts
+        isActive={showRestShorts}
+        onClose={() => setShowRestShorts(false)}
+      />
 
       <Navbar />
     </div>
