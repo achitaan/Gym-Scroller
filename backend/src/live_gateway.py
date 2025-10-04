@@ -20,6 +20,7 @@ class LiveGateway:
         self.calculation_service = calculation_service
         self.connected_clients: Dict[str, Any] = {}
         self.update_task: asyncio.Task = None
+        self.stale_monitor_task: asyncio.Task = None
 
         # Real-time plotting data storage
         self.max_points = 500  # Keep last 500 points
@@ -59,14 +60,29 @@ class LiveGateway:
 
         @self.sio.event
         async def connect(sid, environ):
-            print(f"Client connected: {sid}")
-            self.connected_clients[sid] = {"connected_at": datetime.now()}
+            print(f"🟢 Client connected: {sid}")
+            # Track connection state with detailed metadata
+            self.connected_clients[sid] = {
+                "connected_at": datetime.now(),
+                "chunks_received": 0,
+                "last_chunk_time": datetime.now(),
+            }
+            # Send connection acknowledgment to client
+            await self.sio.emit("connection_ack", {"status": "connected", "sid": sid}, room=sid)
+            print(f"✅ Connection acknowledged for {sid}")
 
         @self.sio.event
         async def disconnect(sid):
-            print(f"Client disconnected: {sid}")
             if sid in self.connected_clients:
+                # Calculate connection duration and stats
+                client_info = self.connected_clients[sid]
+                duration = (datetime.now() - client_info["connected_at"]).total_seconds()
+                chunks = client_info["chunks_received"]
+                print(f"🔴 Client disconnected: {sid}")
+                print(f"   Duration: {duration:.1f}s | Chunks processed: {chunks}")
                 del self.connected_clients[sid]
+            else:
+                print(f"🔴 Client disconnected: {sid} (no session data)")
 
         @self.sio.event
         async def startSet(sid, data):
@@ -103,12 +119,45 @@ class LiveGateway:
 
         @self.sio.event
         async def sensorData(sid, data):
-            """Handle incoming sensor data from ESP8266"""
-            print(f"Sensor data from {sid}: {data}")
+            """Handle incoming sensor data from ESP8266 with timeout protection"""
+            # Update connection tracking
+            if sid in self.connected_clients:
+                self.connected_clients[sid]["chunks_received"] += 1
+                self.connected_clients[sid]["last_chunk_time"] = datetime.now()
+
+            try:
+                # Timeout protection: 2 seconds max for processing
+                # This prevents slow processing from blocking the event loop
+                await asyncio.wait_for(
+                    self._process_sensor_chunk(sid, data),
+                    timeout=2.0
+                )
+            except asyncio.TimeoutError:
+                # Processing took too long - log error and notify client
+                print(f"❌ Processing timeout for {sid} - chunk took >2s to process")
+                await self.sio.emit("processing_error", {
+                    "error": "timeout",
+                    "code": "PROCESSING_TIMEOUT",
+                    "message": "Sensor data processing exceeded 2s limit"
+                }, room=sid)
+            except Exception as e:
+                # General error handling - catch all exceptions to prevent crashes
+                print(f"❌ Error processing sensor data from {sid}: {str(e)}")
+                await self.sio.emit("processing_error", {
+                    "error": "processing_failed",
+                    "code": "PROCESSING_ERROR",
+                    "message": f"Failed to process sensor data: {str(e)}"
+                }, room=sid)
+
+        async def _process_sensor_chunk(sid: str, data: dict):
+            """Internal method to process sensor chunk with logging"""
             # Process sensor data for plotting
             self.process_sensor_data(data)
             # Broadcast to all connected frontend clients
             await self.sio.emit("sensorData", data)
+
+        # Make the helper function accessible
+        self._process_sensor_chunk = _process_sensor_chunk
 
     def process_sensor_data(self, data: Dict[str, Any]):
         """Process incoming sensor data and update plots"""
@@ -279,9 +328,54 @@ class LiveGateway:
 
                     await self.broadcast_set_end(mock_summary)
 
+    async def monitor_stale_connections(self):
+        """
+        Monitor and disconnect stale connections that haven't sent data recently.
+        Runs every 30 seconds and disconnects clients inactive for >120 seconds.
+        """
+        while True:
+            try:
+                await asyncio.sleep(30)  # Check every 30 seconds
+
+                now = datetime.now()
+                stale_clients = []
+
+                # Find stale connections (no data for 120+ seconds)
+                for sid, client_info in self.connected_clients.items():
+                    inactive_duration = (now - client_info["last_chunk_time"]).total_seconds()
+
+                    if inactive_duration > 120:  # 2 minutes of inactivity
+                        stale_clients.append((sid, inactive_duration))
+
+                # Disconnect stale clients
+                for sid, inactive_duration in stale_clients:
+                    chunks = self.connected_clients[sid]["chunks_received"]
+                    print(f"⚠️  Disconnecting stale client {sid}")
+                    print(f"   Inactive for {inactive_duration:.1f}s | Chunks received: {chunks}")
+
+                    # Notify client before disconnecting
+                    await self.sio.emit("connection_timeout", {
+                        "reason": "inactivity",
+                        "inactive_seconds": inactive_duration
+                    }, room=sid)
+
+                    # Disconnect the client
+                    await self.sio.disconnect(sid)
+
+            except asyncio.CancelledError:
+                # Graceful shutdown
+                print("🛑 Stale connection monitor stopped")
+                break
+            except Exception as e:
+                print(f"❌ Error in stale connection monitor: {str(e)}")
+                # Continue monitoring despite errors
+                await asyncio.sleep(5)
+
     def start_background_tasks(self):
-        """Start background tasks (like mock events)"""
+        """Start background tasks (mock events and stale connection monitoring)"""
         self.update_task = asyncio.create_task(self.start_mock_events())
+        self.stale_monitor_task = asyncio.create_task(self.monitor_stale_connections())
+        print("✅ Background tasks started (mock events + stale connection monitor)")
 
     def reset_plot_data(self):
         """Reset all plot data (useful for starting a new set)"""
@@ -293,11 +387,22 @@ class LiveGateway:
 
     async def cleanup(self):
         """Cleanup resources"""
+        # Cancel mock events task
         if self.update_task:
             self.update_task.cancel()
             try:
                 await self.update_task
             except asyncio.CancelledError:
                 pass
+
+        # Cancel stale connection monitor task
+        if self.stale_monitor_task:
+            self.stale_monitor_task.cancel()
+            try:
+                await self.stale_monitor_task
+            except asyncio.CancelledError:
+                pass
+
         # Close matplotlib figure
         plt.close(self.fig)
+        print("🧹 LiveGateway cleanup complete")

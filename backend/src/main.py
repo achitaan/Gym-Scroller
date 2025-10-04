@@ -16,12 +16,18 @@ from shorts_api import ShortsAPI
 # Load environment variables
 load_dotenv()
 
-# Create Socket.IO server with CORS configuration
+# Create Socket.IO server with CORS configuration and aggressive keepalive settings
+# Optimized for real-time IMU streaming from ESP8266 sensors
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",  # Allow all origins for development
     logger=True,
     engineio_logger=True,
+    # Aggressive keepalive settings for real-time streaming
+    ping_timeout=90,  # 90 seconds - handle mobile network delays and brief disconnections
+    ping_interval=20,  # 20 seconds - frequent keepalives to detect dead connections quickly
+    max_http_buffer_size=5 * 1024 * 1024,  # 5MB buffer for chunked IMU data
+    compression_threshold=512,  # Compress messages > 512 bytes to reduce bandwidth
 )
 
 # Services (initialized after app creation)

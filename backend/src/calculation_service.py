@@ -254,6 +254,16 @@ class CalculationService:
 
         if ax.size == 0:
             return []
+
+        # Early exit for insufficient data (< 0.1s at 200Hz)
+        if ax.size < 20:
+            print(f"⚠️  Skipping chunk with insufficient samples: {ax.size} < 20 (less than 0.1s at 200Hz)")
+            return []
+
+        # Warning for abnormally large chunks (> 25 seconds at 200Hz)
+        if ax.size > 5000:
+            print(f"⚠️  Processing large chunk: {ax.size} samples (>{ax.size/fs:.1f}s at {fs}Hz) - may cause processing delays")
+
         if t.size == 0:
             t = np.arange(ax.size, dtype=float) / fs
 

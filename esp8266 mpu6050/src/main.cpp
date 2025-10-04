@@ -75,6 +75,14 @@ bool inMotion = false;
 bool wsConnected = false;
 bool socketIOConnected = false;
 
+// Accelerometer calibration variables
+bool isCalibrating = true;
+unsigned long calibrationStartTime = 0;
+int calibrationSamples = 0;
+float accelSumX = 0, accelSumY = 0, accelSumZ = 0;
+float accelOffsetX = 0, accelOffsetY = 0, accelOffsetZ = 0;
+const float ACCEL_ZERO_TOLERANCE = 0.5;  // m/s² - values within this range treated as 0
+
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {
         case WStype_DISCONNECTED:
@@ -131,6 +139,10 @@ void setup() {
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
     Serial.println("MPU6050 Ready");
 
+    // Start accelerometer calibration
+    calibrationStartTime = millis();
+    Serial.println("Calibrating accelerometer - keep device stationary for 2 seconds...");
+
     // Setup WebSocket
     webSocket.begin(wsHost, wsPort, wsPath);
     webSocket.onEvent(webSocketEvent);
@@ -143,10 +155,49 @@ void loop() {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
 
-    // Calculate overall motion magnitude
-    float accelMag = sqrt(a.acceleration.x * a.acceleration.x +
-                          a.acceleration.y * a.acceleration.y +
-                          a.acceleration.z * a.acceleration.z);
+    // Handle accelerometer calibration phase
+    if (isCalibrating) {
+        unsigned long elapsed = millis() - calibrationStartTime;
+
+        if (elapsed < 2000) {  // Calibrate for 2 seconds
+            // Accumulate samples
+            accelSumX += a.acceleration.x;
+            accelSumY += a.acceleration.y;
+            accelSumZ += a.acceleration.z;
+            calibrationSamples++;
+            delay(20);  // Sample at ~50Hz
+            return;  // Skip rest of loop during calibration
+        } else {
+            // Calibration complete - calculate offsets
+            accelOffsetX = accelSumX / calibrationSamples;
+            accelOffsetY = accelSumY / calibrationSamples;
+            accelOffsetZ = accelSumZ / calibrationSamples;
+            isCalibrating = false;
+
+            Serial.println("Calibration complete!");
+            Serial.print("Offsets - X: ");
+            Serial.print(accelOffsetX);
+            Serial.print(", Y: ");
+            Serial.print(accelOffsetY);
+            Serial.print(", Z: ");
+            Serial.println(accelOffsetZ);
+        }
+    }
+
+    // Apply calibration offsets to remove gravity
+    float calibratedAccelX = a.acceleration.x - accelOffsetX;
+    float calibratedAccelY = a.acceleration.y - accelOffsetY;
+    float calibratedAccelZ = a.acceleration.z - accelOffsetZ;
+
+    // Apply zero tolerance - treat small values as 0 (noise reduction)
+    if (abs(calibratedAccelX) < ACCEL_ZERO_TOLERANCE) calibratedAccelX = 0;
+    if (abs(calibratedAccelY) < ACCEL_ZERO_TOLERANCE) calibratedAccelY = 0;
+    if (abs(calibratedAccelZ) < ACCEL_ZERO_TOLERANCE) calibratedAccelZ = 0;
+
+    // Calculate overall motion magnitude using calibrated values
+    float accelMag = sqrt(calibratedAccelX * calibratedAccelX +
+                          calibratedAccelY * calibratedAccelY +
+                          calibratedAccelZ * calibratedAccelZ);
 
     float gyroMag =
         sqrt(g.gyro.x * g.gyro.x + g.gyro.y * g.gyro.y + g.gyro.z * g.gyro.z);
@@ -190,14 +241,14 @@ void loop() {
         }
     }
 
-    // Build JSON payload for rep event
+    // Build JSON payload for rep event (using calibrated values)
     String repJson = "";
     repJson += "{\"accel\":{\"x\":";
-    repJson += a.acceleration.x;
+    repJson += calibratedAccelX;
     repJson += ",\"y\":";
-    repJson += a.acceleration.y;
+    repJson += calibratedAccelY;
     repJson += ",\"z\":";
-    repJson += a.acceleration.z;
+    repJson += calibratedAccelZ;
     repJson += "},\"gyro\":{\"x\":";
     repJson += g.gyro.x;
     repJson += ",\"y\":";
