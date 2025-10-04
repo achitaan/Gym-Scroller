@@ -16,10 +16,12 @@ from shorts_api import ShortsAPI
 # Load environment variables
 load_dotenv()
 
-# Create Socket.IO server
+# Create Socket.IO server with CORS configuration
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=os.getenv("FRONTEND_URL", "http://localhost:3000"),
+    cors_allowed_origins="*",  # Allow all origins for development
+    logger=True,
+    engineio_logger=True,
 )
 
 # Services (initialized after app creation)
@@ -60,10 +62,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - Allow all origins for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=["*"],  # Allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

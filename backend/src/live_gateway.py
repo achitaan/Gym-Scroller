@@ -63,6 +63,13 @@ class LiveGateway:
             summary = self.calculation_service.calculate_set_summary(rep_events)
             await self.broadcast_set_end(summary)
 
+        @self.sio.event
+        async def sensorData(sid, data):
+            """Handle incoming sensor data from ESP8266"""
+            print(f"Sensor data from {sid}: {data}")
+            # Broadcast to all connected frontend clients
+            await self.sio.emit("sensorData", data)
+
     async def broadcast_rep(self, rep: Dict[str, Any]):
         """Broadcast rep event to all connected clients"""
         await self.sio.emit("rep", rep)
