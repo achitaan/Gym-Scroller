@@ -1,0 +1,32 @@
+Done! Here's how to use it:
+
+  Setup Instructions:
+
+  1. Upload firmware to ESP8266:
+
+  - Build and upload the updated code via PlatformIO
+
+  2. Connect laptop to ESP8266:
+
+  - WiFi Network: GymScroller-MPU6050
+  - Password: gymscroller123
+
+  3. Start backend server:
+
+  cd C:\Dev\Gym-Scroller\backend
+  python src/main.py
+
+  4. Monitor the stream:
+
+  - ESP8266 will connect to backend at 192.168.4.2:3001
+  - Sensor data streams when reps are detected
+  - Backend logs: Sensor data from {sid}: {json}
+  - Serial monitor shows connection status and data
+
+  What happens:
+
+  - ESP8266 creates WiFi AP and waits for connection
+  - When rep detected → sends JSON via WebSocket to backend
+  - Backend receives sensorData event and broadcasts to frontend clients
+  - Data format: {"rep":1,"duration":2500,"accel":{"x":1.2,"y":0.5,"z":9.8},"gyro":{"x    
+  ":0.1,"y":0.2,"z":0.3}}

@@ -301,41 +301,17 @@ export default function FeedPage() {
         </div>
       )}
 
+      {/* Debug controls removed (was a full-width bar in dev) */}
+
       {/* Debug controls (development only) */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="fixed bottom-24 left-4 right-4 z-50 space-y-2">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setIsRepLocked(!isRepLocked)}
-              className={`flex-1 py-2 px-4 rounded-lg backdrop-blur-md text-sm font-medium ${isRepLocked ? "bg-blue-600/90" : "bg-black/60"
-                } text-white`}
-            >
-              {isRepLocked ? "Rep-Locked" : "Free Scroll"}
-            </button>
-            <button
-              onClick={() => setIsResting(!isResting)}
-              className={`flex-1 py-2 px-4 rounded-lg backdrop-blur-md text-sm font-medium ${isResting ? "bg-orange-500/90" : "bg-black/60"
-                } text-white`}
-            >
-              {isResting ? "Resting" : "In Set"}
-            </button>
-          </div>
-
-          {/* Ad controls */}
-          <div className="flex gap-2">
-            <button
-              onClick={triggerAd}
-              disabled={loading}
-              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-green-600/90 text-white text-sm font-medium disabled:opacity-50"
-            >
-              {loading ? "Loading..." : "� Trigger Ad"}
-            </button>
-          </div>
-
-          <div className="text-center text-xs text-white/70 backdrop-blur-md bg-black/50 py-1 rounded">
-            Ctrl+Shift+A: Trigger Ad | Ctrl+Shift+D: Dismiss
-          </div>
-        </div>
+        <button
+          onClick={triggerAd}
+          disabled={loading}
+          className="fixed bottom-24 right-4 z-50 py-2 px-3 rounded-lg backdrop-blur-md bg-green-600/90 text-white text-xs font-medium disabled:opacity-50"
+        >
+          {loading ? "..." : "🎯"}
+        </button>
       )}
 
       {/* Bottom Navigation */}
