@@ -1,0 +1,44 @@
+{
+  "name": "Gym Scroller",
+  "short_name": "Gym Scroller",
+  "description": "Mobile-first strength training app with rep-locked video feed",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "fitness", "sports"],
+  "scope": "/",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Today",
+      "url": "/today",
+      "description": "View today's workout plan"
+    },
+    {
+      "name": "Train",
+      "url": "/train",
+      "description": "Start a workout session"
+    },
+    {
+      "name": "Feed",
+      "url": "/feed",
+      "description": "Browse training videos"
+    }
+  ]
+}
