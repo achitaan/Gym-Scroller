@@ -6,6 +6,7 @@ AND for EACH REP opens TWO graphs:
   1) Time-domain: acceleration (red) and velocity (blue) for that rep segment.
   2) Normalized comparison (peak-aligned): reference, aligned user velocity, and error (user − ref).
 
+Now includes ROM% and PoSR/effort label in the per-rep title.
 Also keeps the live 2×2 dashboard and sends events to the Socket.IO server.
 """
 
@@ -234,7 +235,7 @@ class LiveGatewayTester:
     def _show_rep_windows(self, ev: RepEvent):
         """Open two figures per rep:
            (A) time-domain acc (red) + vel (blue)
-           (B) normalized ref vs aligned user and error (user − ref)
+           (B) normalized ref vs aligned user and error (user − ref) with ROM% & label
         """
         if not ev.extras:
             return
@@ -249,18 +250,21 @@ class LiveGatewayTester:
             figA = plt.figure()
             plt.plot(t_raw, a_raw, "r-", linewidth=1.2, label="Acceleration")
             plt.plot(t_raw, v_raw, "b-", linewidth=1.6, label="Velocity")
-            plt.title(f"Rep {self.rep_count}: Acceleration (red) & Velocity (blue)")
+            plt.title(f"Rep {self.rep_count}: Accel (red) & Vel (blue)")
             plt.xlabel("Time (s)"); plt.ylabel("Signal")
             plt.grid(True, alpha=0.3); plt.legend(loc="upper right")
             figA.canvas.manager.set_window_title(f"Rep {self.rep_count} – Time-Domain")
 
         # B) Normalized comparison (peak-aligned)
         norm = ev.extras.get("norm_plot", None)
+        eff = ev.extras.get("effort", {})
         if norm:
             ut = np.array(norm["user_t"]); uv = np.array(norm["user_v"])
             rt = np.array(norm["ref_t"]);  rv = np.array(norm["ref_v"])
             diff = np.array(norm["diff"])
             align = norm.get("alignment", {})
+            rom_pct = eff.get("rom_pct", None)
+            label = eff.get("label", "")
 
             figB = plt.figure()
             plt.plot(rt, rv, linestyle="--", linewidth=1.8, label="Reference")
@@ -269,13 +273,12 @@ class LiveGatewayTester:
             plt.axhline(0, linestyle="--", linewidth=0.8)
             acc = ev.extras.get("profile_accuracy", None)
             subtitle = f"Match {acc:.0f}%" if acc is not None else ""
+            rom_text = f" | ROM {rom_pct*100:.0f}%" if rom_pct is not None else ""
             mode = align.get("mode", "aligned")
-            tpu = align.get("tpu", None); tpr = align.get("tpr", None)
-            peak_info = f" | Peaks: user {tpu:.2f}, ref {tpr:.2f}" if (tpu is not None and tpr is not None) else ""
-            plt.title(f"Rep {self.rep_count}: Normalized Comparison ({mode}) {subtitle}{peak_info}")
+            plt.title(f"Rep {self.rep_count}: Normalized ({mode}) [{label}]{rom_text} {subtitle}")
             plt.xlabel("Concentric time (0–1)"); plt.ylabel("Normalized value / Error")
             plt.grid(True, alpha=0.3); plt.legend(loc="upper right")
-            figB.canvas.manager.set_window_title(f"Rep {self.rep_count} – Normalized (Aligned) & Error")
+            figB.canvas.manager.set_window_title(f"Rep {self.rep_count} – Normalized & Error")
 
         plt.pause(0.001)
 
@@ -338,7 +341,6 @@ class LiveGatewayTester:
             user_t = np.array(p["user_t"]); user_v = np.array(p["user_v"])
             ref_t = np.array(p["ref_t"]);  ref_v = np.array(p["ref_v"])
             diff = np.array(p["diff"])
-            align = p.get("alignment", {})
 
             ax4.plot(ref_t, ref_v, linestyle="--", linewidth=1.6, label="Reference")
             ax4.plot(user_t, user_v, "b-", linewidth=1.6, label="Your (aligned)")
@@ -353,8 +355,6 @@ class LiveGatewayTester:
         elif self.set_summary:
             ax4.axis("off")
             s = self.set_summary["summary"]; tip = self.set_summary["tip"]
-            accs_local = [ev.extras["profile_accuracy"] for ev in self.completed_events if ev.extras and "profile_accuracy" in ev.extras]
-            acc_text = f"\nProfile Match (mean): {np.mean(accs_local):.1f}%" if accs_local else ""
             block = f"""
 SET SUMMARY (server)
 {'='*40}
@@ -363,7 +363,7 @@ Total TUT: {s['tut']:.1f} s
 Avg Speed: {s['avgSpeed']:.2f} m/s
 Velocity Loss: {s['vl']:.1f} %
 ROM Hit Rate: {s['romHitRate']:.1f} %
-ROM Variability: {s['romVariability']:.1f} cm{acc_text}
+ROM Variability: {s['romVariability']:.1f} cm
 
 Tip:
 {tip}
@@ -407,7 +407,7 @@ async def main():
     print("="*60)
     print("Stream fake IMU, auto-segment reps, per-rep plots:\n"
           "  • Acc (red) + Vel (blue)\n"
-          "  • Ref vs Aligned Vel + Error (user − ref)\n")
+          "  • Ref vs Aligned Vel + Error (user − ref) + ROM% & label\n")
     tester = LiveGatewayTester(server_url="http://localhost:3001")
     await tester.run()
 
