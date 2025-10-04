@@ -19,7 +19,7 @@ class RepEvent:
     valid: bool
     metrics: RepMetrics
     ts: int
-    # Extras: normalized curves, accuracy score, comparison metrics, and raw slices for plotting
+    # Extras: normalized curves, accuracy score, comparison metrics, effort metrics, and raw slices for plotting
     extras: Optional[Dict[str, Any]] = field(default=None)
 
 @dataclass
@@ -220,8 +220,24 @@ class CalculationService:
     """
     Processes IMU → velocity → normalized concentric curves,
     compares to reference profiles with peak-anchored alignment, scores accuracy,
-    and can segment reps from a continuous stream.
+    segments reps from continuous stream, and computes effort/ROM metrics.
     """
+
+    def __init__(self):
+        # Running per-lift ROM baselines (meters of concentric travel)
+        # Updated as we observe larger displacements for that lift.
+        self.rom_baseline: Dict[str, float] = {}
+
+    # ---- ROM baseline helpers ----
+    def _get_rom_baseline(self, lift: str) -> Optional[float]:
+        return self.rom_baseline.get(lift, None)
+
+    def _update_rom_baseline(self, lift: str, displacement_m: float):
+        if displacement_m <= 0:
+            return
+        cur = self.rom_baseline.get(lift)
+        if cur is None or displacement_m > cur:
+            self.rom_baseline[lift] = float(displacement_m)
 
     # ---- Segment a continuous stream into reps ----
     def segment_reps_from_stream(self, raw_stream: Dict[str, Any]) -> List[RepEvent]:
@@ -304,7 +320,7 @@ class CalculationService:
         r = _pearson_r(user_v_aligned, r_v)
         dtw = _dtw_distance(user_v_aligned, r_v)
 
-        # Features on the common (ref) grid
+        # Features (on the common ref grid)
         f_user = _curve_features(r_t, user_v_aligned)
         f_ref = _curve_features(r_t, r_v)
         feat_err = (abs(f_user["t_peak"] - f_ref["t_peak"])
@@ -316,20 +332,89 @@ class CalculationService:
         raw_score = _score_from_metrics(rmse, r, dtw, feat_err)
         score = float(np.clip(raw_score * (1 - penalty), 0, 100))
 
-        # Plotting payloads
+        # ---------------- Effort metrics (ROM & PoSR etc.) ----------------
+        # 1) ROM (displacement) from raw velocity with ZUPT anchors (start/end ~ 0)
+        # Integrate raw v to position; displacement = x_end - x_start
+        x_c = _trapz_integrate(v_c_raw, t_c)
+        # Re-anchor to start=0 to avoid arbitrary offset
+        x_c = x_c - x_c[0]
+        displacement_m = float(x_c[-1])  # meters (relative)
+        # Update per-lift baseline (we keep the max observed)
+        self._update_rom_baseline(lift, displacement_m)
+        rom_base = self._get_rom_baseline(lift) or max(displacement_m, 1e-8)
+        rom_pct = float(np.clip(displacement_m / (rom_base + 1e-12), 0, 1.2))
+
+        # 2) Find SR minimum index on normalized, aligned curve (common grid)
+        #    (use the same definition as _curve_features)
+        n = user_v_aligned.size
+        start = max(int(0.1 * n), 1)
+        i_min = start + int(np.argmin(user_v_aligned[start:]))
+        # Map i_min back into the raw-time index to integrate acceleration for PoSR
+        # Fraction of rep at min:
+        frac_min = r_t[i_min]  # r_t is 0..1
+        j_min_raw = int(np.clip(round(frac_min * (t_c.size - 1)), 0, t_c.size - 1))
+
+        # 3) PoSR impulse: integral of positive acceleration after SR minimum (raw units)
+        if j_min_raw < t_c.size - 1:
+            a_pos = np.clip(a_c_raw[j_min_raw:], 0, None)
+            t_pos = t_c[j_min_raw:]
+            # trapezoidal integral of a(t) dt => m/s (velocity gain potential)
+            posr_imp = float(np.trapz(a_pos, t_pos))
+        else:
+            posr_imp = 0.0
+
+        # Normalize PoSR impulse by peak concentric velocity to get a unitless sense
+        posr_imp_norm = float(posr_imp / (peak + 1e-8))
+
+        # 4) LPVR: mean normalized velocity over last 20% of the concentric
+        i_80 = int(0.8 * n)
+        lpvr = float(np.mean(user_v_aligned[i_80:])) if n > 0 else 0.0
+
+        # 5) Plateau fraction after SR: fraction of samples with |v| < 0.05
+        tail = user_v_aligned[i_min:] if i_min < n else np.array([])
+        plateau_frac = float(np.mean(np.abs(tail) < 0.05)) if tail.size > 0 else 1.0
+
+        # 6) Post-SR Gain on normalized curve
+        post_sr_gain = float(user_v_aligned[-1] - user_v_aligned[i_min]) if tail.size > 0 else 0.0
+
+        # Simple ruleset to label the rep (tune thresholds per lift if needed)
+        label = "completed"
+        if rom_pct >= 0.95 and post_sr_gain >= 0.10 and plateau_frac <= 0.35:
+            label = "completed"
+        elif rom_pct < 0.95 and (posr_imp_norm <= 0.10) and (plateau_frac >= 0.45):
+            label = "true_failure"
+        elif rom_pct < 0.95 and ((posr_imp_norm > 0.10) or (lpvr >= 0.12)) and (plateau_frac < 0.35):
+            label = "aborted"
+        else:
+            # ambiguous; lean by LPVR and PoSR
+            label = "true_failure" if (posr_imp_norm <= 0.10 and lpvr < 0.08) else "aborted"
+
+        # ---------------- Plotting payloads ----------------
         diff = (user_v_aligned - r_v).tolist()  # error function
         raw_plot = {
             "t_raw": t_c.tolist(),
             "acc_raw": a_c_raw.tolist(),
             "vel_raw": v_c_raw.tolist(),
+            "pos_raw": x_c.tolist(),          # for optional position plots
         }
         norm_plot = {
-            "user_t": r_t.tolist(),                 # aligned onto ref grid
+            "user_t": r_t.tolist(),           # aligned onto ref grid
             "user_v": user_v_aligned.tolist(),
             "ref_t": r_t.tolist(),
             "ref_v": r_v.tolist(),
-            "diff": diff,                           # user − ref
+            "diff": diff,                     # user − ref
             "alignment": {"mode": "peak_piecewise", **align_info},
+        }
+        effort = {
+            "rom_pct": rom_pct,
+            "rom_baseline_m": float(rom_base),
+            "displacement_m": displacement_m,
+            "posr_imp": posr_imp,
+            "posr_imp_norm": posr_imp_norm,
+            "lpvr": lpvr,
+            "plateau_frac": plateau_frac,
+            "post_sr_gain": post_sr_gain,
+            "label": label,
         }
 
         tut = float(t_c[-1] - t_c[0])
@@ -342,7 +427,7 @@ class CalculationService:
                 tut=tut,
                 speed=mean_speed,
                 vl=0.0,           # set-level calc later
-                rom_hit=True,     # placeholder
+                rom_hit=(rom_pct >= 0.95),  # treat ROM hit as ≥95% of baseline
             ),
             ts=int(datetime.now().timestamp() * 1000),
             extras={
@@ -356,6 +441,7 @@ class CalculationService:
                 },
                 "raw_plot": raw_plot,
                 "norm_plot": norm_plot,
+                "effort": effort,
             },
         )
 
