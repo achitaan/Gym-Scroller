@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { tokens } from '@/lib/design-tokens';
 import { X, ChevronDown } from 'lucide-react';
 import type { PreSetConfig, Exercise, TargetSpec, TempoSpec, MusicMode } from '@/lib/types';
@@ -11,12 +12,41 @@ interface PreSetSheetProps {
 }
 
 const mockExercises: Exercise[] = [
+  // The Big 3 + OHP (Core Compound Movements)
   { id: '1', name: 'Back Squat', category: 'squat', muscleGroups: ['quads', 'glutes'] },
   { id: '2', name: 'Bench Press', category: 'bench', muscleGroups: ['chest', 'triceps'] },
   { id: '3', name: 'Deadlift', category: 'deadlift', muscleGroups: ['back', 'hamstrings'] },
+  { id: '4', name: 'Overhead Press', category: 'press', muscleGroups: ['shoulders', 'triceps'] },
+  
+  // Essential Variations
+  { id: '5', name: 'Romanian Deadlift', category: 'deadlift', muscleGroups: ['hamstrings', 'glutes'] },
+  { id: '6', name: 'Incline Bench Press', category: 'bench', muscleGroups: ['chest', 'triceps'] },
+  { id: '7', name: 'Front Squat', category: 'squat', muscleGroups: ['quads', 'core'] },
+  
+  // Popular Upper Body
+  { id: '8', name: 'Pull-ups', category: 'bodyweight', muscleGroups: ['back', 'biceps'] },
+  { id: '9', name: 'Dips', category: 'bodyweight', muscleGroups: ['chest', 'triceps'] },
+  { id: '10', name: 'Barbell Row', category: 'accessory', muscleGroups: ['back', 'biceps'] },
+  { id: '11', name: 'Lat Pulldown', category: 'accessory', muscleGroups: ['back', 'biceps'] },
+  
+  // Essential Accessories
+  { id: '12', name: 'Bulgarian Split Squat', category: 'accessory', muscleGroups: ['quads', 'glutes'] },
+  { id: '13', name: 'Hip Thrusts', category: 'accessory', muscleGroups: ['glutes'] },
+  { id: '14', name: 'Lateral Raises', category: 'accessory', muscleGroups: ['shoulders'] },
+  { id: '15', name: 'Barbell Curls', category: 'accessory', muscleGroups: ['biceps'] },
+  
+  // Functional Movements
+  { id: '16', name: 'Push-ups', category: 'bodyweight', muscleGroups: ['chest', 'triceps'] },
+  { id: '17', name: 'Plank', category: 'core', muscleGroups: ['core'] },
+  { id: '18', name: 'Lunges', category: 'accessory', muscleGroups: ['quads', 'glutes'] },
+  
+  // Popular Machines/Isolation
+  { id: '19', name: 'Leg Press', category: 'accessory', muscleGroups: ['quads', 'glutes'] },
+  { id: '20', name: 'Calf Raises', category: 'accessory', muscleGroups: ['calves'] },
 ];
 
 export function PreSetSheet({ onStart, onClose }: PreSetSheetProps) {
+  const router = useRouter();
   const [selectedExercise, setSelectedExercise] = useState<Exercise>(mockExercises[0]);
   const [targetType, setTargetType] = useState<'rpe' | '1rm-percent'>('rpe');
   const [targetValue, setTargetValue] = useState(8);
@@ -24,36 +54,60 @@ export function PreSetSheet({ onStart, onClose }: PreSetSheetProps) {
   const [restTimer, setRestTimer] = useState(180);
   const [repLock, setRepLock] = useState(true);
   const [musicMode, setMusicMode] = useState<MusicMode>('normal');
+  const [plannedSets, setPlannedSets] = useState<number>(3);
+  const [sets, setSets] = useState<Array<{ weightKg?: number }>>(() =>
+    new Array(3).fill(0).map(() => ({ weightKg: undefined }))
+  );
+  const [exercisesState, setExercisesState] = useState<Array<{ exercise: Exercise; sets: Array<{ weightKg?: number }> }>>(() => [
+    { exercise: mockExercises[0], sets: new Array(3).fill(0).map(() => ({ weightKg: undefined })) },
+  ]);
 
   const handleStart = () => {
     const config: PreSetConfig = {
-      exercise: selectedExercise,
+      // keep backward-compatible top-level exercise as the first one
+      exercise: exercisesState[0]?.exercise ?? selectedExercise,
       target: { type: targetType, value: targetValue },
       tempo,
       restTimerSeconds: restTimer,
       repLockEnabled: repLock,
       musicMode,
+      plannedSets,
+      sets,
+      exercises: exercisesState,
     };
     onStart(config);
+    // navigate to feed with preset encoded in the URL
+    try {
+      const payload = JSON.stringify({ exercises: exercisesState });
+      // UTF-8 safe base64
+      const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
+      router.push(`/feed?preset=${encodeURIComponent(b64)}`);
+    } catch (e) {
+      // fallback: just navigate without payload
+      router.push('/feed');
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50">
+      {/* Full screen sheet */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Sheet */}
-      <div
-        className="relative w-full max-h-[85vh] overflow-y-auto rounded-t-3xl p-6"
+        className="relative w-full h-full overflow-y-auto scroll-smooth"
         style={{
           backgroundColor: tokens.colors.background.secondary,
-          borderTopLeftRadius: tokens.radius.xl,
-          borderTopRightRadius: tokens.radius.xl,
+          WebkitOverflowScrolling: 'touch',
+          scrollBehavior: 'smooth',
+          paddingBottom: '100px', // Extra space for bottom nav
+          scrollbarWidth: 'none', // Firefox
+          msOverflowStyle: 'none', // IE and Edge
         }}
       >
+        <style jsx>{`
+          div::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
+        <div className="p-6 pt-4">
         {/* Handle */}
         <div className="flex justify-center mb-4">
           <div
@@ -75,156 +129,149 @@ export function PreSetSheet({ onStart, onClose }: PreSetSheetProps) {
           </button>
         </div>
 
-        {/* Exercise Picker */}
+        {/* Exercises (multiple) */}
         <div className="mb-6">
           <label className="block text-sm font-medium mb-2" style={{ color: tokens.colors.text.secondary }}>
-            Exercise
+            Exercises
           </label>
-          <div className="relative">
-            <select
-              value={selectedExercise.id}
-              onChange={(e) => setSelectedExercise(mockExercises.find(ex => ex.id === e.target.value)!)}
-              className="w-full p-4 rounded-lg appearance-none pr-10"
-              style={{
-                backgroundColor: tokens.colors.background.tertiary,
-                color: tokens.colors.text.primary,
-                borderRadius: tokens.radius.md,
-              }}
-            >
-              {mockExercises.map((ex) => (
-                <option key={ex.id} value={ex.id}>
-                  {ex.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" size={20} style={{ color: tokens.colors.text.secondary }} />
-          </div>
-        </div>
+          <div className="space-y-4">
+            {exercisesState.map((exEntry, exIdx) => (
+              <div key={exIdx} className="p-3 rounded-lg" style={{ backgroundColor: tokens.colors.background.tertiary }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex-1 pr-3">
+                    <select
+                      value={exEntry.exercise.id}
+                      onChange={(e) => {
+                        const found = mockExercises.find((me) => me.id === e.target.value)!;
+                        setExercisesState((prev) => {
+                          const copy = prev.slice();
+                          copy[exIdx] = { ...copy[exIdx], exercise: found };
+                          return copy;
+                        });
+                      }}
+                      className="w-full p-3 rounded-lg appearance-none"
+                      style={{ backgroundColor: tokens.colors.background.tertiary, color: tokens.colors.text.primary }}
+                    >
+                      {mockExercises.map((ex) => (
+                        <option key={ex.id} value={ex.id}>{ex.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExercisesState((prev) => prev.filter((_, i) => i !== exIdx))}
+                    className="ml-3 px-3 py-2 rounded-lg"
+                    style={{ backgroundColor: tokens.colors.background.secondary, color: tokens.colors.text.secondary }}
+                  >
+                    Remove
+                  </button>
+                </div>
 
-        {/* Target */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium mb-2" style={{ color: tokens.colors.text.secondary }}>
-            Target
-          </label>
-          <div className="flex gap-2 mb-3">
-            <button
-              onClick={() => setTargetType('rpe')}
-              className="flex-1 py-2 px-4 rounded-lg font-medium transition-all"
-              style={{
-                backgroundColor: targetType === 'rpe' ? tokens.colors.accent.primary : tokens.colors.background.tertiary,
-                color: targetType === 'rpe' ? tokens.colors.text.primary : tokens.colors.text.secondary,
-              }}
-            >
-              RPE
-            </button>
-            <button
-              onClick={() => setTargetType('1rm-percent')}
-              className="flex-1 py-2 px-4 rounded-lg font-medium transition-all"
-              style={{
-                backgroundColor: targetType === '1rm-percent' ? tokens.colors.accent.primary : tokens.colors.background.tertiary,
-                color: targetType === '1rm-percent' ? tokens.colors.text.primary : tokens.colors.text.secondary,
-              }}
-            >
-              %1RM
-            </button>
-          </div>
-          <input
-            type="number"
-            value={targetValue}
-            onChange={(e) => setTargetValue(Number(e.target.value))}
-            min={targetType === 'rpe' ? 1 : 0}
-            max={targetType === 'rpe' ? 10 : 100}
-            className="w-full p-4 rounded-lg"
-            style={{
-              backgroundColor: tokens.colors.background.tertiary,
-              color: tokens.colors.text.primary,
-            }}
-          />
-        </div>
+                {/* sets for this exercise */}
+                <div className="space-y-2">
+                  {exEntry.sets && exEntry.sets.length > 0 ? (
+                    <>
+                      {exEntry.sets.map((s, si) => (
+                        <div key={si} className="flex items-center gap-3">
+                          <div className="w-12 text-sm text-slate-500" style={{ color: tokens.colors.text.secondary }}>#{si + 1}</div>
+                          <input
+                            type="number"
+                            placeholder="kg"
+                            value={s.weightKg ?? ''}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value || '');
+                              setExercisesState((prev) => {
+                                const copy = prev.slice();
+                                const entry = { ...copy[exIdx] };
+                                const setsCopy = entry.sets.slice();
+                                setsCopy[si] = { ...setsCopy[si], weightKg: Number.isNaN(v) ? undefined : v };
+                                entry.sets = setsCopy;
+                                copy[exIdx] = entry;
+                                return copy;
+                              });
+                            }}
+                            className="flex-1 p-3 rounded-lg text-right"
+                            style={{ backgroundColor: tokens.colors.background.secondary, color: tokens.colors.text.primary }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setExercisesState((prev) => {
+                              const copy = prev.slice();
+                              copy[exIdx] = { ...copy[exIdx], sets: copy[exIdx].sets.filter((_, i) => i !== si) };
+                              return copy;
+                            })}
+                            className="px-3 py-2 rounded-lg"
+                            style={{ backgroundColor: tokens.colors.background.tertiary, color: tokens.colors.text.secondary }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
 
-        {/* Tempo */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium mb-2" style={{ color: tokens.colors.text.secondary }}>
-            Tempo (3-1-X-1)
-          </label>
-          <div className="grid grid-cols-4 gap-2">
-            {['eccentric', 'bottomPause', 'concentric', 'topPause'].map((phase, idx) => (
-              <div key={phase}>
-                <input
-                  type="text"
-                  value={tempo[phase as keyof TempoSpec]}
-                  onChange={(e) => setTempo({ ...tempo, [phase]: e.target.value === 'X' ? 'X' : Number(e.target.value) })}
-                  className="w-full p-3 text-center rounded-lg"
-                  style={{
-                    backgroundColor: tokens.colors.background.tertiary,
-                    color: tokens.colors.text.primary,
-                  }}
-                />
+                      <div className="flex gap-3 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setExercisesState((prev) => {
+                            const copy = prev.slice();
+                            copy[exIdx] = { ...copy[exIdx], sets: [...copy[exIdx].sets, { weightKg: undefined }] };
+                            return copy;
+                          })}
+                          className="px-3 py-2 rounded-lg"
+                          style={{ backgroundColor: tokens.colors.background.tertiary, color: tokens.colors.text.primary }}
+                        >
+                          + Add Set
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-slate-500" style={{ color: tokens.colors.text.secondary }}>No sets yet</div>
+                      <button
+                        type="button"
+                        onClick={() => setExercisesState((prev) => {
+                          const copy = prev.slice();
+                          copy[exIdx] = { ...copy[exIdx], sets: [{ weightKg: undefined }] };
+                          return copy;
+                        })}
+                        className="px-3 py-2 rounded-lg"
+                        style={{ backgroundColor: tokens.colors.background.tertiary, color: tokens.colors.text.primary }}
+                      >
+                        + Add Set
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
+
+            <div>
+              <div className="flex gap-3">
+                <select
+                  value={selectedExercise.id}
+                  onChange={(e) => setSelectedExercise(mockExercises.find(ex => ex.id === e.target.value)!)}
+                  className="flex-1 p-3 rounded-lg appearance-none"
+                  style={{ backgroundColor: tokens.colors.background.tertiary, color: tokens.colors.text.primary }}
+                >
+                  {mockExercises.map((ex) => (
+                    <option key={ex.id} value={ex.id}>{ex.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setExercisesState((prev) => [...prev, { exercise: selectedExercise, sets: new Array(3).fill(0).map(() => ({ weightKg: undefined })) }])}
+                  className="px-4 py-2 rounded-lg font-medium"
+                  style={{ backgroundColor: tokens.colors.background.tertiary, color: tokens.colors.text.primary }}
+                >
+                  + Add Exercise
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Rest Timer */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium mb-2" style={{ color: tokens.colors.text.secondary }}>
-            Rest Timer (seconds)
-          </label>
-          <input
-            type="number"
-            value={restTimer}
-            onChange={(e) => setRestTimer(Number(e.target.value))}
-            className="w-full p-4 rounded-lg"
-            style={{
-              backgroundColor: tokens.colors.background.tertiary,
-              color: tokens.colors.text.primary,
-            }}
-          />
-        </div>
+        {/* (Global sets editor removed — sets are per-exercise now) */}
 
-        {/* Rep-Lock Toggle */}
-        <div className="mb-6 flex items-center justify-between p-4 rounded-lg" style={{ backgroundColor: tokens.colors.background.tertiary }}>
-          <span style={{ color: tokens.colors.text.primary }}>Rep-locked scrolling</span>
-          <button
-            onClick={() => setRepLock(!repLock)}
-            className="relative w-12 h-7 rounded-full transition-colors"
-            style={{ backgroundColor: repLock ? tokens.colors.accent.primary : tokens.colors.border.default }}
-          >
-            <div
-              className="absolute top-1 w-5 h-5 bg-white rounded-full transition-transform"
-              style={{ transform: repLock ? 'translateX(22px)' : 'translateX(2px)' }}
-            />
-          </button>
-        </div>
-
-        {/* Music Mode */}
-        <div className="mb-8">
-          <label className="block text-sm font-medium mb-2" style={{ color: tokens.colors.text.secondary }}>
-            Music Mode
-          </label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setMusicMode('normal')}
-              className="flex-1 py-2 px-4 rounded-lg font-medium transition-all"
-              style={{
-                backgroundColor: musicMode === 'normal' ? tokens.colors.accent.primary : tokens.colors.background.tertiary,
-                color: musicMode === 'normal' ? tokens.colors.text.primary : tokens.colors.text.secondary,
-              }}
-            >
-              Normal
-            </button>
-            <button
-              onClick={() => setMusicMode('quiet')}
-              className="flex-1 py-2 px-4 rounded-lg font-medium transition-all"
-              style={{
-                backgroundColor: musicMode === 'quiet' ? tokens.colors.accent.primary : tokens.colors.background.tertiary,
-                color: musicMode === 'quiet' ? tokens.colors.text.primary : tokens.colors.text.secondary,
-              }}
-            >
-              Quiet Coaching
-            </button>
-          </div>
-        </div>
+        {/* Target removed per request */}
 
         {/* Start Button */}
         <button
@@ -235,8 +282,9 @@ export function PreSetSheet({ onStart, onClose }: PreSetSheetProps) {
             minHeight: tokens.touchTarget.min,
           }}
         >
-          Start Set
+          Start Workout
         </button>
+        </div>
       </div>
     </div>
   );

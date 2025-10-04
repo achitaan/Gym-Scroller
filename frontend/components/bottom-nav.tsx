@@ -9,7 +9,7 @@ interface BottomNavProps {
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const tabs = [
-    { id: "today" as const, label: "Today", icon: Home },
+    { id: "today" as const, label: "Home", icon: Home },
     { id: "train" as const, label: "Train", icon: Dumbbell },
     { id: "feed" as const, label: "Feed", icon: Rss },
     { id: "history" as const, label: "History", icon: BarChart3 },

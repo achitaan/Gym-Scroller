@@ -8,6 +8,7 @@ import { Navbar } from "@/components/Navbar";
 import { useYouTubeShorts } from "@/lib/use-youtube-shorts";
 import { useAdManager } from "@/lib/use-ad-manager";
 import { AdOverlay } from "@/components/AdOverlay";
+import { useSearchParams } from 'next/navigation';
 
 /**
  * Feed Page - YouTube Shorts during rest periods
@@ -16,6 +17,9 @@ import { AdOverlay } from "@/components/AdOverlay";
  */
 export default function FeedPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [incomingPreset, setIncomingPreset] = useState<null | { exercises: Array<{ exercise: any; sets?: Array<{ weightKg?: number }> }> }>(null);
+  const [currentReps, setCurrentReps] = useState(0);
   const { videos, loading, error, fetchShort, fetchMultiple } = useYouTubeShorts();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRepLocked, setIsRepLocked] = useState(false);
@@ -79,6 +83,21 @@ export default function FeedPage() {
   useEffect(() => {
     fetchMultiple(3); // Load 3 initial videos
   }, []);
+
+  // Decode incoming preset from query param (if present)
+  useEffect(() => {
+    try {
+      const b64 = searchParams.get('preset');
+      if (!b64) return;
+      const json = decodeURIComponent(escape(window.atob(b64)));
+      const parsed = JSON.parse(json);
+      if (parsed && parsed.exercises) {
+        setIncomingPreset(parsed);
+      }
+    } catch (e) {
+      console.warn('Failed to decode preset', e);
+    }
+  }, [searchParams]);
 
   // Auto-scroll to current video
   useEffect(() => {
@@ -279,6 +298,60 @@ export default function FeedPage() {
       {videos.length > 0 && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-black/50 backdrop-blur-sm rounded-full text-white text-sm">
           {currentIndex + 1} / {videos.length}
+        </div>
+      )}
+
+      {/* Incoming preset summary (special instance) */}
+      {incomingPreset && (
+        <div className="fixed top-16 left-4 z-50 p-3 rounded-lg bg-white/6 backdrop-blur-md text-white w-80 max-w-[calc(50vw-2rem)]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-medium">Starting Workout</div>
+            <div className="text-sm text-neutral-300">{incomingPreset.exercises.length} exercises</div>
+          </div>
+          
+          {/* Rep Counter */}
+          <div className="mb-3 p-2 rounded bg-white/10 text-center">
+            <div className="text-2xl font-bold tabular-nums">{currentReps}</div>
+            <div className="text-xs text-neutral-300">Reps</div>
+          </div>
+          
+          <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
+            {incomingPreset.exercises.map((ex: any, i: number) => (
+              <div key={i} className="space-y-1">
+                <div className="text-sm font-medium">{ex.exercise.name}</div>
+                <div className="text-xs text-neutral-300">
+                  {ex.sets?.length ?? 0} sets • {ex.sets && ex.sets.length > 0 ? `${ex.sets.map((s: any) => (s.weightKg ? `${s.weightKg}kg` : '—')).join(', ')}` : 'No weights'}
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {/* End Workout Button */}
+          <button
+            onClick={() => {
+              try {
+                // Prepare workout summary data
+                const summaryData = {
+                  exercises: incomingPreset.exercises,
+                  totalReps: currentReps,
+                  duration: null, // Can add duration tracking later
+                };
+                
+                // Encode summary data
+                const payload = JSON.stringify(summaryData);
+                const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
+                
+                // Navigate to workout summary
+                router.push(`/workout-summary?data=${encodeURIComponent(b64)}`);
+              } catch (e) {
+                // Fallback: navigate without data
+                router.push('/workout-summary');
+              }
+            }}
+            className="w-full py-2 px-3 rounded-lg bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-white text-sm font-medium transition-colors"
+          >
+            End Workout
+          </button>
         </div>
       )}
 

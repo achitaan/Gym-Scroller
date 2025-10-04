@@ -6,7 +6,7 @@ import { Home, Dumbbell, Film, BarChart3, User } from 'lucide-react';
 import { tokens } from '@/lib/design-tokens';
 
 const tabs = [
-  { id: 'today', label: 'Today', href: '/today', icon: Home },
+  { id: 'today', label: 'Home', href: '/today', icon: Home },
   { id: 'train', label: 'Train', href: '/train', icon: Dumbbell },
   { id: 'feed', label: 'Feed', href: '/feed', icon: Film },
   { id: 'history', label: 'History', href: '/history', icon: BarChart3 },

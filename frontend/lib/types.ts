@@ -67,6 +67,21 @@ export interface PreSetConfig {
   restTimerSeconds: number;
   repLockEnabled: boolean;
   musicMode: MusicMode;
+  // Number of sets the user intends to perform for this exercise
+  plannedSets: number;
+  // Optional per-set details (weight). If present, length should equal plannedSets.
+  sets?: Array<{
+    weightKg?: number;
+    completed?: boolean;
+  }>;
+  // Optional multi-exercise setup: each entry can carry its own planned sets/weights
+  exercises?: Array<{
+    exercise: Exercise;
+    sets?: Array<{
+      weightKg?: number;
+      completed?: boolean;
+    }>;
+  }>;
 }
 
 export interface WorkoutSession {

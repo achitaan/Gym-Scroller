@@ -16,6 +16,9 @@ export default function TrainPage() {
   const [state, setState] = useState<TrainState>('idle');
   const [currentConfig, setCurrentConfig] = useState<PreSetConfig | null>(null);
   const [restTimeRemaining, setRestTimeRemaining] = useState(0);
+  const [returnStateAfterSetup, setReturnStateAfterSetup] = useState<TrainState>('idle');
+  const [plannedSets, setPlannedSets] = useState<number>(0);
+  const [currentSetNumber, setCurrentSetNumber] = useState<number>(0);
   const { lastSetEnd, subscribeToSetEnd } = useSocket();
 
   useEffect(() => {
@@ -44,6 +47,8 @@ export default function TrainPage() {
 
   const handleStartSet = (config: PreSetConfig) => {
     setCurrentConfig(config);
+    setPlannedSets(Math.max(1, config.plannedSets || 1));
+    setCurrentSetNumber(1);
     setState('in-set');
   };
 
@@ -55,6 +60,7 @@ export default function TrainPage() {
   };
 
   const handleEdit = () => {
+    setReturnStateAfterSetup('rest');
     setState('setup');
   };
 
@@ -64,6 +70,12 @@ export default function TrainPage() {
   };
 
   const handleNextSet = () => {
+    if (currentSetNumber >= plannedSets) {
+      // Finished all planned sets
+      setState('idle');
+      return;
+    }
+    setCurrentSetNumber((n) => n + 1);
     setState('in-set');
   };
 
@@ -96,7 +108,7 @@ export default function TrainPage() {
             }}
           >
             <Plus size={24} />
-            Start Set
+            Start Exercise
           </button>
         </div>
       )}
@@ -105,6 +117,13 @@ export default function TrainPage() {
       {state === 'in-set' && currentConfig && (
         <>
           <InSetHUD exerciseName={currentConfig.exercise.name} musicMode={currentConfig.musicMode} />
+
+          {/* Set count badge */}
+          <div className="fixed top-4 left-0 right-0 flex justify-center">
+            <span className="px-3 py-1 rounded-full text-sm" style={{ backgroundColor: tokens.colors.background.secondary, color: tokens.colors.text.primary }}>
+              Set {currentSetNumber} of {plannedSets}
+            </span>
+          </div>
 
           {/* Floating pill to end set manually */}
           <div className="fixed bottom-24 left-0 right-0 flex justify-center px-6">
@@ -181,7 +200,7 @@ export default function TrainPage() {
               minHeight: tokens.touchTarget.min,
             }}
           >
-            Next Set
+            {currentSetNumber >= plannedSets ? 'Finish' : 'Next Set'}
           </button>
 
           {/* Rest-unlocked banner */}
@@ -199,7 +218,7 @@ export default function TrainPage() {
       {state === 'setup' && (
         <PreSetSheet
           onStart={handleStartSet}
-          onClose={() => setState(state === 'idle' ? 'idle' : 'rest')}
+          onClose={() => setState(returnStateAfterSetup)}
         />
       )}
 

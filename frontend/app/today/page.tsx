@@ -1,5 +1,4 @@
 'use client';
-
 import { tokens } from '@/lib/design-tokens';
 import { Activity, Calendar, TrendingUp, Zap } from 'lucide-react';
 import Link from 'next/link';
@@ -31,7 +30,7 @@ export default function TodayPage() {
             fontWeight: tokens.typography.title.weight,
           }}
         >
-          Today
+          Home
         </h1>
         <p style={{ color: tokens.colors.text.secondary, fontSize: tokens.typography.body.size }}>
           {mockDailyPlan.date}
@@ -47,21 +46,15 @@ export default function TodayPage() {
         }}
       >
         {/* Program Badge */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div
-            className="px-3 py-1 rounded-full text-sm font-medium"
+            className="px-3 py-1 rounded-full text-sm font-medium inline-block"
             style={{
               backgroundColor: tokens.colors.background.elevated,
               color: tokens.colors.accent.primary,
             }}
           >
             {mockDailyPlan.programType}
-          </div>
-          <div className="flex items-center gap-2">
-            <Activity size={16} style={{ color: tokens.colors.text.secondary }} />
-            <span style={{ color: tokens.colors.text.secondary, fontSize: '14px' }}>
-              Readiness: {mockDailyPlan.readiness}%
-            </span>
           </div>
         </div>
 
