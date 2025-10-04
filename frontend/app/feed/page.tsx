@@ -8,7 +8,6 @@ import { Navbar } from "@/components/Navbar";
 import { useYouTubeShorts } from "@/lib/use-youtube-shorts";
 import { useAdManager } from "@/lib/use-ad-manager";
 import { AdOverlay } from "@/components/AdOverlay";
-import { mockAds } from "@/lib/mock-ads";
 
 /**
  * Feed Page - YouTube Shorts during rest periods
@@ -21,6 +20,7 @@ export default function FeedPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRepLocked, setIsRepLocked] = useState(false);
   const [isResting, setIsResting] = useState(false);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
 
@@ -33,6 +33,44 @@ export default function FeedPage() {
     handleAdClick,
     clearPausedIndex,
   } = useAdManager();
+
+  // Function to trigger an ad (targeted search video)
+  const triggerAd = async () => {
+    try {
+      const response = await fetch("/api/youtube?ads=true", {
+        cache: "no-store",
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ad: ${response.status}`);
+      }
+
+      const adVideo = await response.json();
+      
+      console.log("🎯 Ad video fetched:", adVideo);
+      console.log(`⏱️ Video duration: ${adVideo.duration} seconds`);
+      
+      // Optional: You could show this as an overlay or add it to the feed
+      // For example, using your existing ad system:
+      if (adVideo) {
+        const adData = {
+          id: `ad-${Date.now()}`,
+          type: 'video' as const,
+          content: adVideo.embedUrl,
+          duration: adVideo.duration ? adVideo.duration * 1000 : 30000, // Use actual video duration in milliseconds, fallback to 30s
+          title: adVideo.title,
+          clickUrl: `https://youtube.com/watch?v=${adVideo.id}`,
+          impressionId: `imp-${Date.now()}`,
+        };
+        showAd(adData, currentIndex);
+      }
+    } catch (error) {
+      console.error("Failed to trigger ad:", error);
+    }
+  };
 
   // Load initial videos on mount
   useEffect(() => {
@@ -97,9 +135,16 @@ export default function FeedPage() {
   // Touch support for mobile swipe
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartY.current = e.touches[0].clientY;
+    if (!hasUserInteracted) {
+      setHasUserInteracted(true);
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!hasUserInteracted) {
+      setHasUserInteracted(true);
+    }
+    
     if (isRepLocked && !isResting) return;
 
     const touchEndY = e.changedTouches[0].clientY;
@@ -180,16 +225,35 @@ export default function FeedPage() {
         {videos.map((video, index) => (
           <div
             key={`${video.id}-${index}`}
+            data-video-index={index}
             className="h-screen w-full snap-start snap-always flex items-center justify-center relative"
           >
             {/* Video iframe */}
             <div className="w-full h-full max-w-[500px] mx-auto relative">
               <iframe
-                src={`${video.embedUrl}?autoplay=${index === currentIndex ? 1 : 0}&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}`}
+                key={`iframe-${video.id}-${index === currentIndex ? 'active' : 'inactive'}-${hasUserInteracted ? 'interacted' : 'initial'}`}
+                src={index === currentIndex 
+                  ? `${video.embedUrl}?autoplay=${hasUserInteracted ? 1 : 0}&mute=1&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}&playsinline=1`
+                  : `${video.embedUrl}?autoplay=0&mute=1&controls=1&modestbranding=1&rel=0`
+                }
                 className="w-full h-full"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
+              
+              {/* Click to play overlay for first interaction */}
+              {!hasUserInteracted && index === currentIndex && (
+                <div 
+                  className="absolute inset-0 bg-black/30 flex items-center justify-center cursor-pointer z-10"
+                  onClick={() => setHasUserInteracted(true)}
+                >
+                  <div className="bg-white/20 backdrop-blur-sm rounded-full p-4">
+                    <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                  </div>
+                </div>
+              )}
 
               {/* Video info overlay */}
               <div className="absolute bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
@@ -260,22 +324,11 @@ export default function FeedPage() {
           {/* Ad controls */}
           <div className="flex gap-2">
             <button
-              onClick={() => showAd(mockAds[0], currentIndex)}
-              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-purple-600/90 text-white text-sm font-medium"
+              onClick={triggerAd}
+              disabled={loading}
+              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-green-600/90 text-white text-sm font-medium disabled:opacity-50"
             >
-              🎬 Video Ad
-            </button>
-            <button
-              onClick={() => showAd(mockAds[1], currentIndex)}
-              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-green-600/90 text-white text-sm font-medium"
-            >
-              🖼️ Image Ad
-            </button>
-            <button
-              onClick={() => showAd(mockAds[3], currentIndex)}
-              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-pink-600/90 text-white text-sm font-medium"
-            >
-              🎨 HTML Ad
+              {loading ? "Loading..." : "� Trigger Ad"}
             </button>
           </div>
 

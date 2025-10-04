@@ -1,14 +1,27 @@
 /**
  * Ad Manager Hook
- * Manages ad state and handles ad trigger events
+ * Manages ad state and handles YouTube ad overlays
  */
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Ad, AdManagerState } from './ad-types';
-import { adEventBus } from './ad-event-bus';
-import { getNextAd } from './mock-ads';
+import { useState, useCallback, useRef } from 'react';
+
+export interface Ad {
+  id: string;
+  type: 'video';
+  content: string; // YouTube embed URL
+  duration: number; // Duration in milliseconds
+  title: string;
+  clickUrl?: string;
+  impressionId?: string;
+}
+
+export interface AdManagerState {
+  currentAd: Ad | null;
+  isAdShowing: boolean;
+  pausedVideoIndex: number | null;
+}
 
 export function useAdManager() {
   const [state, setState] = useState<AdManagerState>({
@@ -20,43 +33,41 @@ export function useAdManager() {
   const autoDismissTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   /**
-   * Show an ad
+   * Show a YouTube ad
    */
-  const showAd = useCallback((ad?: Ad, videoIndex?: number) => {
+  const showAd = useCallback((ad: Ad, videoIndex?: number) => {
     // Clear any existing auto-dismiss timer
     if (autoDismissTimerRef.current) {
       clearTimeout(autoDismissTimerRef.current);
       autoDismissTimerRef.current = null;
     }
 
-    // Use provided ad or get next ad from rotation
-    const adToShow = ad || getNextAd();
-
     setState((prev) => ({
       ...prev,
-      currentAd: adToShow,
+      currentAd: ad,
       isAdShowing: true,
       pausedVideoIndex: videoIndex ?? prev.pausedVideoIndex,
     }));
 
     // Track impression
-    if (adToShow.impressionId) {
-      console.log(`📊 Ad impression tracked: ${adToShow.impressionId}`);
+    if (ad.impressionId) {
+      console.log(`📊 Ad impression tracked: ${ad.impressionId}`);
     }
 
-    // Set up auto-dismiss if duration is specified
-    if (adToShow.duration) {
+    // Set up auto-dismiss based on video duration
+    if (ad.duration && ad.duration > 0) {
+      console.log(`⏱️ Ad will auto-dismiss in ${ad.duration / 1000} seconds`);
       autoDismissTimerRef.current = setTimeout(() => {
         dismissAd();
-      }, adToShow.duration);
+      }, ad.duration);
     }
 
-    // Lock scroll
+    // Lock scroll while ad is showing
     if (typeof document !== 'undefined') {
       document.body.style.overflow = 'hidden';
     }
 
-    console.log(`🎬 Ad showing: ${adToShow.type} - ${adToShow.title || adToShow.id}`);
+    console.log(`🎬 YouTube ad showing: "${ad.title}"`);
   }, []);
 
   /**
@@ -72,7 +83,7 @@ export function useAdManager() {
     setState((prev) => {
       // Track dismissal
       if (prev.currentAd) {
-        console.log(`❌ Ad dismissed: ${prev.currentAd.id}`);
+        console.log(`❌ Ad dismissed: ${prev.currentAd.title}`);
       }
 
       return {
@@ -90,7 +101,7 @@ export function useAdManager() {
   }, []);
 
   /**
-   * Handle ad click
+   * Handle ad click - opens YouTube video in new tab
    */
   const handleAdClick = useCallback(() => {
     if (state.currentAd?.clickUrl) {
@@ -100,7 +111,7 @@ export function useAdManager() {
   }, [state.currentAd]);
 
   /**
-   * Clear paused video index after resuming
+   * Clear paused video index after resuming feed
    */
   const clearPausedIndex = useCallback(() => {
     setState((prev) => ({
@@ -109,31 +120,17 @@ export function useAdManager() {
     }));
   }, []);
 
-  // Subscribe to ad events
-  useEffect(() => {
-    const unsubscribeShow = adEventBus.onShowAd((ad) => {
-      showAd(ad);
-    });
-
-    const unsubscribeDismiss = adEventBus.onDismissAd(() => {
-      dismissAd();
-    });
-
-    return () => {
-      unsubscribeShow();
-      unsubscribeDismiss();
-      
-      // Clean up on unmount
-      if (autoDismissTimerRef.current) {
-        clearTimeout(autoDismissTimerRef.current);
-      }
-      
-      // Unlock scroll
-      if (typeof document !== 'undefined') {
-        document.body.style.overflow = '';
-      }
-    };
-  }, [showAd, dismissAd]);
+  // Cleanup on unmount
+  const cleanup = useCallback(() => {
+    if (autoDismissTimerRef.current) {
+      clearTimeout(autoDismissTimerRef.current);
+    }
+    
+    // Unlock scroll
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = '';
+    }
+  }, []);
 
   return {
     currentAd: state.currentAd,
@@ -143,5 +140,6 @@ export function useAdManager() {
     dismissAd,
     handleAdClick,
     clearPausedIndex,
+    cleanup,
   };
 }
