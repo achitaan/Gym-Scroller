@@ -5,7 +5,7 @@
 // Adafruit_MPU6050 mpu;
 
 // void setup() {
-//   Serial.begin(115200);
+//   Serial.begin(9600);
 // }
 
 // void loop() {
@@ -31,7 +31,7 @@
 //   delay(100);
 // }
 
-// #define LED D0
+// #define LED D1
 
 // void setup() {
 //   pinMode(LED, OUTPUT);
@@ -41,6 +41,7 @@
 //   digitalWrite(LED, HIGH);
 //   delay(200);
 //   digitalWrite(LED, LOW);
+//   delay(200);
 // }
 
 
@@ -59,7 +60,7 @@ unsigned long lastRepTime = 0;
 bool inMotion = false;
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   if (!mpu.begin()) {
     Serial.println("Failed to find MPU6050 chip");
     while (1) {
