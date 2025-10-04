@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ad } from '@/lib/ad-types';
 
 interface AdOverlayProps {
@@ -81,10 +81,47 @@ export function AdOverlay({ ad, onAdClick }: AdOverlayProps) {
 }
 
 function VideoAd({ content, onClick }: { content: string; onClick: () => void }) {
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const audioUnlocked = useMemo(() => {
+        try { return localStorage.getItem('audioUnlocked') === 'true'; } catch { return false; }
+    }, []);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    // Ensure autoplay works by adding required query params (muted + inline)
+    const withParam = (url: string, key: string, value: string) => {
+        const has = new RegExp(`[?&]${key}=`).test(url);
+        if (has) return url;
+        const sep = url.includes('?') ? '&' : '?';
+        return `${url}${sep}${key}=${value}`;
+    };
+
+    let autoplaySrc = content;
+    autoplaySrc = withParam(autoplaySrc, 'autoplay', '1');
+    autoplaySrc = withParam(autoplaySrc, 'mute', audioUnlocked ? '0' : '1');
+    autoplaySrc = withParam(autoplaySrc, 'playsinline', '1');
+    autoplaySrc = withParam(autoplaySrc, 'enablejsapi', '1');
+    autoplaySrc = withParam(autoplaySrc, 'origin', encodeURIComponent(origin));
+
+    useEffect(() => {
+        if (!audioUnlocked) return;
+        const send = (func: string, args: any[] = []) => {
+            const win = iframeRef.current?.contentWindow;
+            if (!win) return;
+            win.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+        };
+        const timeouts = [300, 1000, 2000];
+        const ids = timeouts.map((t) => setTimeout(() => {
+            send('unMute');
+            send('setVolume', [100]);
+            send('playVideo');
+        }, t));
+        return () => { ids.forEach((id) => clearTimeout(id)); };
+    }, [audioUnlocked, content]);
+
     return (
         <div className="w-full h-full" onClick={onClick}>
             <iframe
-                src={content}
+                ref={iframeRef}
+                src={autoplaySrc}
                 className="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen

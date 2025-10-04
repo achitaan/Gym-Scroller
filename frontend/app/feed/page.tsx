@@ -20,9 +20,12 @@ export default function FeedPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRepLocked, setIsRepLocked] = useState(false);
   const [isResting, setIsResting] = useState(false);
-  const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [hasUserInteracted, setHasUserInteracted] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
+  const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
   // Ad system integration
   const {
@@ -159,6 +162,75 @@ export default function FeedPage() {
     }
   };
 
+  // Send YouTube player API command to the current iframe
+  const sendYTCommand = (idx: number, func: string, args: any[] = []) => {
+    const iframe = iframeRefs.current[idx];
+    if (!iframe || !iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      JSON.stringify({ event: 'command', func, args }),
+      '*'
+    );
+  };
+
+  // Unlock audio on first real user interaction (required by browser policies)
+  useEffect(() => {
+    // Initialize from persisted setting
+    if (!audioUnlocked) {
+      try {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('audioUnlocked') : null;
+        if (stored === 'true') {
+          setAudioUnlocked(true);
+        }
+      } catch {}
+    }
+
+    if (audioUnlocked) return;
+    const unlock = () => {
+      setAudioUnlocked(true);
+      try { localStorage.setItem('audioUnlocked', 'true'); } catch {}
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock as any);
+      window.removeEventListener('keydown', unlock as any);
+    };
+  }, [audioUnlocked]);
+
+  // As soon as audio is unlocked and preference is unmuted, unmute the current video
+  useEffect(() => {
+    if (isAdShowing) return; // don't affect feed while ad is showing
+    if (audioUnlocked) {
+      sendYTCommand(currentIndex, 'unMute');
+      sendYTCommand(currentIndex, 'setVolume', [100]);
+      sendYTCommand(currentIndex, 'playVideo');
+    }
+  }, [audioUnlocked, currentIndex, isAdShowing]);
+
+  // Robust autoplay: attempt to play the active video shortly after render/scroll
+  useEffect(() => {
+    if (isAdShowing) return; // don't auto-play feed while ad is shown
+    const timeouts = [100, 400, 1000].map((t) => setTimeout(() => {
+      // Ensure it's muted to comply with autoplay policies
+      sendYTCommand(currentIndex, 'mute');
+      sendYTCommand(currentIndex, 'playVideo');
+      // If audio is unlocked, unmute
+      if (audioUnlocked) {
+        sendYTCommand(currentIndex, 'unMute');
+        sendYTCommand(currentIndex, 'setVolume', [100]);
+      }
+    }, t));
+    return () => { timeouts.forEach((id) => clearTimeout(id)); };
+  }, [currentIndex, hasUserInteracted, audioUnlocked, isAdShowing]);
+
+  // Pause the feed video when an ad starts showing
+  useEffect(() => {
+    if (isAdShowing) {
+      const idx = pausedVideoIndex ?? currentIndex;
+      sendYTCommand(idx, 'pauseVideo');
+    }
+  }, [isAdShowing, pausedVideoIndex, currentIndex]);
+
   if (error) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center px-6">
@@ -232,9 +304,12 @@ export default function FeedPage() {
             <div className="w-full h-full max-w-[500px] mx-auto relative">
               <iframe
                 key={`iframe-${video.id}-${index === currentIndex ? 'active' : 'inactive'}-${hasUserInteracted ? 'interacted' : 'initial'}`}
+                ref={(el) => {
+                  iframeRefs.current[index] = el;
+                }}
                 src={index === currentIndex 
-                  ? `${video.embedUrl}?autoplay=${hasUserInteracted ? 1 : 0}&mute=1&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}&playsinline=1`
-                  : `${video.embedUrl}?autoplay=0&mute=1&controls=1&modestbranding=1&rel=0`
+                  ? `${video.embedUrl}?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
+                  : `${video.embedUrl}?autoplay=0&mute=1&controls=1&modestbranding=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(origin)}`
                 }
                 className="w-full h-full"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -262,6 +337,8 @@ export default function FeedPage() {
                 </h2>
                 <p className="text-sm text-gray-300">{video.channelTitle}</p>
               </div>
+
+              {/* No custom sound toggle; rely on default YouTube controls */}
             </div>
 
             {/* Navigation indicators */}
