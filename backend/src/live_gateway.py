@@ -3,7 +3,11 @@ import socketio
 from typing import Dict, List, Any
 from datetime import datetime
 import random
-from calculation_service import CalculationService, RepEvent, RepMetrics, SetEnd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from collections import deque
+from calculation_service import CalculationService, RepEvent, RepMetrics, SetEnd, _trapz_integrate
 
 
 class LiveGateway:
@@ -16,6 +20,38 @@ class LiveGateway:
         self.calculation_service = calculation_service
         self.connected_clients: Dict[str, Any] = {}
         self.update_task: asyncio.Task = None
+
+        # Real-time plotting data storage
+        self.max_points = 500  # Keep last 500 points
+        self.time_data = deque(maxlen=self.max_points)
+        self.accel_data = deque(maxlen=self.max_points)
+        self.velocity_data = deque(maxlen=self.max_points)
+        self.position_data = deque(maxlen=self.max_points)
+        self.start_time = None
+
+        # Setup matplotlib for real-time plotting
+        plt.ion()
+        self.fig, self.axes = plt.subplots(3, 1, figsize=(12, 8))
+        self.fig.suptitle('Real-Time Sensor Data')
+
+        self.axes[0].set_ylabel('Acceleration (m/s²)')
+        self.axes[0].grid(True)
+        self.axes[1].set_ylabel('Velocity (m/s)')
+        self.axes[1].grid(True)
+        self.axes[2].set_ylabel('Position (m)')
+        self.axes[2].set_xlabel('Time (s)')
+        self.axes[2].grid(True)
+
+        self.line_accel, = self.axes[0].plot([], [], 'r-', label='Acceleration')
+        self.line_vel, = self.axes[1].plot([], [], 'g-', label='Velocity')
+        self.line_pos, = self.axes[2].plot([], [], 'b-', label='Position')
+
+        self.axes[0].legend()
+        self.axes[1].legend()
+        self.axes[2].legend()
+
+        plt.tight_layout()
+
         self._setup_socket_handlers()
 
     def _setup_socket_handlers(self):
@@ -35,6 +71,8 @@ class LiveGateway:
         @self.sio.event
         async def startSet(sid, data):
             print(f"Set started by {sid}: {data}")
+            # Reset plot data for new set
+            self.reset_plot_data()
 
         @self.sio.event
         async def endSet(sid, data):
@@ -67,8 +105,76 @@ class LiveGateway:
         async def sensorData(sid, data):
             """Handle incoming sensor data from ESP8266"""
             print(f"Sensor data from {sid}: {data}")
+            # Process sensor data for plotting
+            self.process_sensor_data(data)
             # Broadcast to all connected frontend clients
             await self.sio.emit("sensorData", data)
+
+    def process_sensor_data(self, data: Dict[str, Any]):
+        """Process incoming sensor data and update plots"""
+        if 'accel' not in data:
+            return
+
+        # Initialize start time on first data point
+        if self.start_time is None:
+            self.start_time = datetime.now()
+
+        # Calculate elapsed time
+        current_time = (datetime.now() - self.start_time).total_seconds()
+
+        # Extract acceleration magnitude (or use z-axis for vertical movement)
+        accel = data['accel']['z']  # Using z-axis, change to x or y as needed
+        # Or use magnitude: accel = np.sqrt(data['accel']['x']**2 + data['accel']['y']**2 + data['accel']['z']**2)
+
+        # Store time and acceleration
+        self.time_data.append(current_time)
+        self.accel_data.append(accel)
+
+        # Convert to numpy arrays for integration
+        t = np.array(self.time_data)
+        a = np.array(self.accel_data)
+
+        # Calculate velocity using trapezoidal integration
+        if len(t) > 1:
+            v = _trapz_integrate(a, t)
+            self.velocity_data.append(v[-1])
+
+            # Calculate position by integrating velocity
+            v_array = np.array(self.velocity_data)
+            t_v = t[-len(v_array):]  # Match time array length
+            x = _trapz_integrate(v_array, t_v)
+            x = x - x[0]  # Start at 0
+            self.position_data.append(x[-1])
+        else:
+            self.velocity_data.append(0)
+            self.position_data.append(0)
+
+        # Update plot
+        self.update_plot()
+
+    def update_plot(self):
+        """Update the real-time plot with current data"""
+        if len(self.time_data) == 0:
+            return
+
+        t = list(self.time_data)
+        a = list(self.accel_data)
+        v = list(self.velocity_data)
+        x = list(self.position_data)
+
+        # Update line data
+        self.line_accel.set_data(t, a)
+        self.line_vel.set_data(t, v)
+        self.line_pos.set_data(t, x)
+
+        # Auto-scale axes
+        for ax in self.axes:
+            ax.relim()
+            ax.autoscale_view()
+
+        # Redraw
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
 
     async def broadcast_rep(self, rep: Dict[str, Any]):
         """Broadcast rep event to all connected clients"""
@@ -177,6 +283,14 @@ class LiveGateway:
         """Start background tasks (like mock events)"""
         self.update_task = asyncio.create_task(self.start_mock_events())
 
+    def reset_plot_data(self):
+        """Reset all plot data (useful for starting a new set)"""
+        self.time_data.clear()
+        self.accel_data.clear()
+        self.velocity_data.clear()
+        self.position_data.clear()
+        self.start_time = None
+
     async def cleanup(self):
         """Cleanup resources"""
         if self.update_task:
@@ -185,3 +299,5 @@ class LiveGateway:
                 await self.update_task
             except asyncio.CancelledError:
                 pass
+        # Close matplotlib figure
+        plt.close(self.fig)
