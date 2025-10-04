@@ -33,24 +33,33 @@ Backend services for the Gym Scroller mobile-first strength training app.
 
 ## Setup
 
-1. Install dependencies:
+1. Create a Python virtual environment and activate it:
 ```bash
-npm install
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-2. Create `.env` file:
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Create `.env` file:
 ```bash
 cp .env.example .env
 ```
 
-3. Add your YouTube Data API key to `.env`:
+4. Add your YouTube Data API key to `.env`:
 ```
 YOUTUBE_API_KEY=your_api_key_here
+PORT=3001
+FRONTEND_URL=http://localhost:3000
 ```
 
-4. Run development server:
+5. Run development server:
 ```bash
-npm run dev
+cd src
+python main.py
 ```
 
 The server will start on `http://localhost:3001`
@@ -84,14 +93,13 @@ See `../frontend/lib/types.ts` for TypeScript definitions.
 ## Development
 
 ```bash
-# Watch mode (auto-restart on changes)
-npm run dev
+# Development mode (auto-reload on changes)
+cd src
+python main.py
 
-# Build
-npm run build
-
-# Production
-npm start
+# Production mode (with uvicorn)
+cd src
+uvicorn main:socket_app --host 0.0.0.0 --port 3001
 ```
 
 ## Security Notes

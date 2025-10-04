@@ -1,148 +1,163 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { tokens } from '@/lib/design-tokens';
-import { ChevronRight, Dumbbell, Music, Heart, Type, Contrast, Vibrate } from 'lucide-react';
-import type { ProgramType } from '@/lib/types';
+import { useState } from "react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { StatsCard } from "@/components/StatsCard";
+import { ProfileStats } from "@/components/ProfileStats";
+import { Navbar } from "@/components/Navbar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTheme } from "next-themes";
+import { Settings, Moon, Sun, Dumbbell, TrendingUp, Calendar } from "lucide-react";
+import { mockUserStats, volumeData } from "@/lib/mock-data";
 
+/**
+ * Profile Page
+ * Hevy UX pattern: Personal stats overview with visual progress charts
+ * Theme toggle for light/dark mode, lifetime stats display
+ */
 export default function ProfilePage() {
-  const [currentProgram, setCurrentProgram] = useState<ProgramType>('strength');
-  const [largeText, setLargeText] = useState(false);
-  const [highContrast, setHighContrast] = useState(false);
-  const [hapticsOnly, setHapticsOnly] = useState(false);
-  const [musicLinked, setMusicLinked] = useState(false);
-  const [healthSharing, setHealthSharing] = useState(false);
-
-  const programs: { type: ProgramType; label: string; desc: string }[] = [
-    { type: 'strength', label: 'Strength', desc: '10-20% VL, focus on speed & power' },
-    { type: 'hypertrophy', label: 'Hypertrophy', desc: '20-30% VL, focus on TUT & ROM' },
-    { type: 'technique', label: 'Technique', desc: '<10% VL, strict quality' },
-  ];
-
-  const Toggle = ({ value, onChange }: { value: boolean; onChange: () => void }) => (
-    <button
-      onClick={onChange}
-      className="relative w-12 h-7 rounded-full transition-colors"
-      style={{ backgroundColor: value ? tokens.colors.accent.primary : tokens.colors.border.default }}
-    >
-      <div
-        className="absolute top-1 w-5 h-5 bg-white rounded-full transition-transform"
-        style={{ transform: value ? 'translateX(22px)' : 'translateX(2px)' }}
-      />
-    </button>
-  );
+  const { theme, setTheme } = useTheme();
+  const [stats] = useState(mockUserStats);
 
   return (
-    <main className="min-h-screen p-4 pb-20" style={{ backgroundColor: tokens.colors.background.primary }}>
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-1" style={{ color: tokens.colors.text.primary }}>Profile</h1>
-        <p style={{ color: tokens.colors.text.secondary }}>Settings & preferences</p>
-      </div>
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 pb-20">
+      {/* Header with avatar and basic info */}
+      <header className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-6 py-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-4">
+            <Avatar className="h-20 w-20">
+              <AvatarFallback className="bg-gradient-to-br from-blue-600 to-blue-400 text-white text-2xl font-bold">
+                {stats.name.split(' ').map(n => n[0]).join('')}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <h1 className="text-2xl font-bold">{stats.name}</h1>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Member since 2024
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? (
+              <Sun className="h-5 w-5" />
+            ) : (
+              <Moon className="h-5 w-5" />
+            )}
+          </Button>
+        </div>
 
-      {/* Program Selection */}
-      <div className="p-5 rounded-xl mb-4" style={{ backgroundColor: tokens.colors.background.secondary }}>
-        <h2 className="text-lg font-semibold mb-4" style={{ color: tokens.colors.text.primary }}>Program Mode</h2>
-        <div className="space-y-3">
-          {programs.map((prog) => (
-            <button
-              key={prog.type}
-              onClick={() => setCurrentProgram(prog.type)}
-              className="w-full p-4 rounded-lg text-left transition-all"
-              style={{
-                backgroundColor: currentProgram === prog.type ? tokens.colors.background.elevated : tokens.colors.background.tertiary,
-                borderLeft: currentProgram === prog.type ? `4px solid ${tokens.colors.accent.primary}` : '4px solid transparent',
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold mb-1" style={{ color: tokens.colors.text.primary }}>{prog.label}</p>
-                  <p className="text-sm" style={{ color: tokens.colors.text.secondary }}>{prog.desc}</p>
-                </div>
-                {currentProgram === prog.type && (
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: tokens.colors.accent.primary }}>
-                    <svg width="14" height="10" viewBox="0 0 14 10" fill="none">
-                      <path d="M1 5L5 9L13 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+        {/* Stats overview */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="text-center p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800">
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.totalWorkouts}</div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Workouts</p>
+          </div>
+          <div className="text-center p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800">
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.streak}</div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Day Streak</p>
+          </div>
+          <div className="text-center p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800">
+            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+              {Math.round(stats.totalVolume / 1000)}k
+            </div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Total kg</p>
+          </div>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main className="px-6 py-6 space-y-6">
+        {/* Tabs for different views */}
+        <Tabs defaultValue="stats" className="w-full">
+          <TabsList className="w-full">
+            <TabsTrigger value="stats" className="flex-1">Stats</TabsTrigger>
+            <TabsTrigger value="settings" className="flex-1">Settings</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="stats" className="space-y-6 mt-6">
+            {/* Detailed stats */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4">Lifetime Stats</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <StatsCard
+                  title="Total Workouts"
+                  value={stats.totalWorkouts}
+                  icon={Dumbbell}
+                />
+                <StatsCard
+                  title="Best Streak"
+                  value={`${stats.streak} days`}
+                  icon={Calendar}
+                />
+                <StatsCard
+                  title="Total Volume"
+                  value={`${Math.round(stats.totalVolume / 1000)}k kg`}
+                  icon={TrendingUp}
+                />
+                <StatsCard
+                  title="Body Weight"
+                  value={`${stats.currentWeight} kg`}
+                />
+              </div>
+            </section>
+
+            {/* Volume chart */}
+            <section>
+              <ProfileStats data={volumeData} />
+            </section>
+          </TabsContent>
+
+          <TabsContent value="settings" className="space-y-6 mt-6">
+            {/* Settings section */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4">Preferences</h2>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-4 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
+                  <div className="flex items-center gap-3">
+                    <Settings className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+                    <div>
+                      <p className="font-medium">Theme</p>
+                      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                        {theme === "dark" ? "Dark" : "Light"}
+                      </p>
+                    </div>
                   </div>
-                )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  >
+                    Toggle
+                  </Button>
+                </div>
               </div>
-            </button>
-          ))}
-        </div>
-      </div>
+            </section>
 
-      {/* Routines */}
-      <div className="p-5 rounded-xl mb-4" style={{ backgroundColor: tokens.colors.background.secondary }}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold" style={{ color: tokens.colors.text.primary }}>Routines</h2>
-          <button className="text-sm font-medium" style={{ color: tokens.colors.accent.primary }}>+ New</button>
-        </div>
-        <div className="space-y-2">
-          {['Upper Body A', 'Lower Body B', 'Full Body'].map((routine, index) => (
-            <button
-              key={index}
-              className="w-full p-4 rounded-lg flex items-center justify-between"
-              style={{ backgroundColor: tokens.colors.background.tertiary }}
-            >
-              <div className="flex items-center gap-3">
-                <Dumbbell size={20} style={{ color: tokens.colors.text.secondary }} />
-                <span style={{ color: tokens.colors.text.primary }}>{routine}</span>
+            {/* Account actions */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4">Account</h2>
+              <div className="space-y-2">
+                <Button variant="outline" className="w-full justify-start">
+                  Edit Profile
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  Export Data
+                </Button>
+                <Button variant="outline" className="w-full justify-start text-red-600 hover:text-red-700">
+                  Sign Out
+                </Button>
               </div>
-              <ChevronRight size={20} style={{ color: tokens.colors.text.tertiary }} />
-            </button>
-          ))}
-        </div>
-      </div>
+            </section>
+          </TabsContent>
+        </Tabs>
+      </main>
 
-      {/* Integrations */}
-      <div className="p-5 rounded-xl mb-4" style={{ backgroundColor: tokens.colors.background.secondary }}>
-        <h2 className="text-lg font-semibold mb-4" style={{ color: tokens.colors.text.primary }}>Integrations</h2>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Music size={20} style={{ color: tokens.colors.text.secondary }} />
-              <span style={{ color: tokens.colors.text.primary }}>Music Link</span>
-            </div>
-            <Toggle value={musicLinked} onChange={() => setMusicLinked(!musicLinked)} />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Heart size={20} style={{ color: tokens.colors.text.secondary }} />
-              <span style={{ color: tokens.colors.text.primary }}>Health Sharing</span>
-            </div>
-            <Toggle value={healthSharing} onChange={() => setHealthSharing(!healthSharing)} />
-          </div>
-        </div>
-      </div>
-
-      {/* Accessibility */}
-      <div className="p-5 rounded-xl" style={{ backgroundColor: tokens.colors.background.secondary }}>
-        <h2 className="text-lg font-semibold mb-4" style={{ color: tokens.colors.text.primary }}>Accessibility</h2>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Type size={20} style={{ color: tokens.colors.text.secondary }} />
-              <span style={{ color: tokens.colors.text.primary }}>Large Text</span>
-            </div>
-            <Toggle value={largeText} onChange={() => setLargeText(!largeText)} />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Contrast size={20} style={{ color: tokens.colors.text.secondary }} />
-              <span style={{ color: tokens.colors.text.primary }}>High Contrast</span>
-            </div>
-            <Toggle value={highContrast} onChange={() => setHighContrast(!highContrast)} />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Vibrate size={20} style={{ color: tokens.colors.text.secondary }} />
-              <span style={{ color: tokens.colors.text.primary }}>Haptics Only</span>
-            </div>
-            <Toggle value={hapticsOnly} onChange={() => setHapticsOnly(!hapticsOnly)} />
-          </div>
-        </div>
-      </div>
-    </main>
+      <Navbar />
+    </div>
   );
 }
