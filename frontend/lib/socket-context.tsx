@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { RepEvent, SetUpdate, SetEnd, ShortsQueue } from './types';
+import { adEventBus } from './ad-event-bus';
+import type { Ad } from './ad-types';
 
 interface SocketContextValue {
   socket: Socket | null;
@@ -80,6 +82,17 @@ export function SocketProvider({ children, url = 'http://localhost:3001' }: Sock
       console.log('[Socket] Music cue:', data.action);
     });
 
+    // Ad event listeners
+    socketInstance.on('showAd', (data: Ad) => {
+      console.log('[Socket] Show ad received:', data);
+      adEventBus.triggerAd(data);
+    });
+
+    socketInstance.on('dismissAd', () => {
+      console.log('[Socket] Dismiss ad received');
+      adEventBus.dismissAd();
+    });
+
     setSocket(socketInstance);
 
     return () => {
@@ -89,7 +102,7 @@ export function SocketProvider({ children, url = 'http://localhost:3001' }: Sock
 
   // Subscribe to rep events
   const subscribeToReps = useCallback((callback: (rep: RepEvent) => void) => {
-    if (!socket) return () => {};
+    if (!socket) return () => { };
 
     socket.on('rep', callback);
     return () => {
@@ -99,7 +112,7 @@ export function SocketProvider({ children, url = 'http://localhost:3001' }: Sock
 
   // Subscribe to set update events
   const subscribeToSetUpdates = useCallback((callback: (update: SetUpdate) => void) => {
-    if (!socket) return () => {};
+    if (!socket) return () => { };
 
     socket.on('setUpdate', callback);
     return () => {
@@ -109,7 +122,7 @@ export function SocketProvider({ children, url = 'http://localhost:3001' }: Sock
 
   // Subscribe to set end events
   const subscribeToSetEnd = useCallback((callback: (end: SetEnd) => void) => {
-    if (!socket) return () => {};
+    if (!socket) return () => { };
 
     socket.on('setEnd', callback);
     return () => {

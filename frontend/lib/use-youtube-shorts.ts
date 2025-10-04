@@ -16,11 +16,21 @@ export function useYouTubeShorts() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isLoadingRef = useRef(false);
+  const lastCallTimeRef = useRef<number>(0);
 
   const fetchShort = useCallback(async () => {
     // Prevent duplicate requests
     if (isLoadingRef.current) {
       return null;
+    }
+
+    // Enforce minimum 100ms delay between successive API calls
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCallTimeRef.current;
+    const minDelay = 100; // 0.1 seconds
+
+    if (timeSinceLastCall < minDelay) {
+      await new Promise(resolve => setTimeout(resolve, minDelay - timeSinceLastCall));
     }
 
     isLoadingRef.current = true;
@@ -52,11 +62,13 @@ export function useYouTubeShorts() {
       };
 
       setVideos(prev => [...prev, video]);
+      lastCallTimeRef.current = Date.now(); // Update last call timestamp
       return video;
     } catch (err: any) {
       const errorMsg = err?.message || String(err);
       console.error("Failed to fetch YouTube short:", errorMsg);
       setError(errorMsg);
+      lastCallTimeRef.current = Date.now(); // Update even on error
       return null;
     } finally {
       setLoading(false);

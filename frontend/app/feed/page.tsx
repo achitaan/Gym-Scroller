@@ -6,6 +6,9 @@ import { ArrowLeft, Lock, Unlock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/Navbar";
 import { useYouTubeShorts } from "@/lib/use-youtube-shorts";
+import { useAdManager } from "@/lib/use-ad-manager";
+import { AdOverlay } from "@/components/AdOverlay";
+import { mockAds } from "@/lib/mock-ads";
 
 /**
  * Feed Page - YouTube Shorts during rest periods
@@ -20,6 +23,16 @@ export default function FeedPage() {
   const [isResting, setIsResting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef(0);
+
+  // Ad system integration
+  const {
+    currentAd,
+    isAdShowing,
+    pausedVideoIndex,
+    showAd,
+    handleAdClick,
+    clearPausedIndex,
+  } = useAdManager();
 
   // Load initial videos on mount
   useEffect(() => {
@@ -36,6 +49,14 @@ export default function FeedPage() {
       });
     }
   }, [currentIndex]);
+
+  // Resume video after ad is dismissed
+  useEffect(() => {
+    if (!isAdShowing && pausedVideoIndex !== null) {
+      setCurrentIndex(pausedVideoIndex);
+      clearPausedIndex();
+    }
+  }, [isAdShowing, pausedVideoIndex, clearPausedIndex]);
 
   // Preload next video when approaching the end
   useEffect(() => {
@@ -218,28 +239,59 @@ export default function FeedPage() {
 
       {/* Debug controls (development only) */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="fixed bottom-24 left-4 right-4 z-50 flex gap-2">
-          <button
-            onClick={() => setIsRepLocked(!isRepLocked)}
-            className={`flex-1 py-2 px-4 rounded-lg backdrop-blur-md text-sm font-medium ${
-              isRepLocked ? "bg-blue-600/90" : "bg-black/60"
-            } text-white`}
-          >
-            {isRepLocked ? "Rep-Locked" : "Free Scroll"}
-          </button>
-          <button
-            onClick={() => setIsResting(!isResting)}
-            className={`flex-1 py-2 px-4 rounded-lg backdrop-blur-md text-sm font-medium ${
-              isResting ? "bg-orange-500/90" : "bg-black/60"
-            } text-white`}
-          >
-            {isResting ? "Resting" : "In Set"}
-          </button>
+        <div className="fixed bottom-24 left-4 right-4 z-50 space-y-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsRepLocked(!isRepLocked)}
+              className={`flex-1 py-2 px-4 rounded-lg backdrop-blur-md text-sm font-medium ${isRepLocked ? "bg-blue-600/90" : "bg-black/60"
+                } text-white`}
+            >
+              {isRepLocked ? "Rep-Locked" : "Free Scroll"}
+            </button>
+            <button
+              onClick={() => setIsResting(!isResting)}
+              className={`flex-1 py-2 px-4 rounded-lg backdrop-blur-md text-sm font-medium ${isResting ? "bg-orange-500/90" : "bg-black/60"
+                } text-white`}
+            >
+              {isResting ? "Resting" : "In Set"}
+            </button>
+          </div>
+
+          {/* Ad controls */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => showAd(mockAds[0], currentIndex)}
+              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-purple-600/90 text-white text-sm font-medium"
+            >
+              🎬 Video Ad
+            </button>
+            <button
+              onClick={() => showAd(mockAds[1], currentIndex)}
+              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-green-600/90 text-white text-sm font-medium"
+            >
+              🖼️ Image Ad
+            </button>
+            <button
+              onClick={() => showAd(mockAds[3], currentIndex)}
+              className="flex-1 py-2 px-4 rounded-lg backdrop-blur-md bg-pink-600/90 text-white text-sm font-medium"
+            >
+              🎨 HTML Ad
+            </button>
+          </div>
+
+          <div className="text-center text-xs text-white/70 backdrop-blur-md bg-black/50 py-1 rounded">
+            Ctrl+Shift+A: Trigger Ad | Ctrl+Shift+D: Dismiss
+          </div>
         </div>
       )}
 
       {/* Bottom Navigation */}
       <Navbar />
+
+      {/* Ad Overlay */}
+      {isAdShowing && currentAd && (
+        <AdOverlay ad={currentAd} onAdClick={handleAdClick} />
+      )}
 
       {/* Hide scrollbar */}
       <style jsx>{`

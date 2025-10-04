@@ -10,6 +10,15 @@ const SHORTS_ONLY = true;       // set false for any length
 const SAFE_SEARCH = "moderate"; // "none" | "moderate" | "strict"
 const RETRIES = 3;              // retry with different seeds if empty
 
+// 🛡️ QUOTA PROTECTION: Cache videos to reduce API calls
+// Each API call costs 101 quota units (100 for search.list + 1 for videos.list)
+// With 10,000 daily quota, you can only fetch ~99 times/day
+// This cache allows 1 API call to serve 20-50 shorts!
+const videoCache: any[] = [];
+const CACHE_REFILL_THRESHOLD = 5; // Refill cache when it drops below this
+const CACHE_MAX_SIZE = 20; // Maximum videos to cache
+let isRefilling = false; // Prevent duplicate refill requests
+
 // helper: parse ISO8601 duration PT#M#S -> seconds
 function isoToSeconds(iso: string) {
   const h = /(\d+)H/.exec(iso)?.[1] ?? "0";
@@ -27,12 +36,8 @@ function randomWindow(daysBack = 5 * 365) {
   return { publishedAfter: start.toISOString(), publishedBefore: end.toISOString() };
 }
 
-export async function GET(req: Request) {
-  if (!KEY) return NextResponse.json({ error: "Missing API key" }, { status: 500 });
-
-  const url = new URL(req.url);
-  const channelId = url.searchParams.get("channelId"); // optional: random from a specific channel
-
+// Helper: Fetch videos from YouTube API and return formatted array
+async function fetchVideosFromAPI(channelId: string | null): Promise<any[]> {
   for (let attempt = 0; attempt < RETRIES; attempt++) {
     const seed = channelId ? "" : SEEDS[Math.floor(Math.random() * SEEDS.length)];
     const { publishedAfter, publishedBefore } = randomWindow();
@@ -77,16 +82,74 @@ export async function GET(req: Request) {
     }
     if (!items.length) continue;
 
-    const pick = items[Math.floor(Math.random() * items.length)];
-    return NextResponse.json({
-      id: pick.id,
-      title: pick.snippet.title,
-      channelTitle: pick.snippet.channelTitle,
-      publishedAt: pick.snippet.publishedAt,
-      thumbnail: pick.snippet.thumbnails?.high?.url || pick.snippet.thumbnails?.medium?.url,
-      embedUrl: `https://www.youtube.com/embed/${pick.id}`,
-    });
+    // Transform to our format and return all videos
+    return items.map(v => ({
+      id: v.id,
+      title: v.snippet.title,
+      channelTitle: v.snippet.channelTitle,
+      publishedAt: v.snippet.publishedAt,
+      thumbnail: v.snippet.thumbnails?.high?.url || v.snippet.thumbnails?.medium?.url,
+      embedUrl: `https://www.youtube.com/embed/${v.id}`,
+    }));
   }
 
-  return NextResponse.json({ error: "No results after retries" }, { status: 404 });
+  return []; // No videos found after retries
+}
+
+// Background cache refill function
+async function refillCache(channelId: string | null) {
+  if (isRefilling) return;
+  isRefilling = true;
+
+  try {
+    const videos = await fetchVideosFromAPI(channelId);
+    if (videos.length > 0) {
+      videoCache.push(...videos.slice(0, CACHE_MAX_SIZE));
+      console.log(`✅ Cache refilled with ${videos.length} videos`);
+    }
+  } catch (error) {
+    console.error('❌ Cache refill failed:', error);
+  } finally {
+    isRefilling = false;
+  }
+}
+
+export async function GET(req: Request) {
+  if (!KEY) return NextResponse.json({ error: "Missing API key" }, { status: 500 });
+
+  const url = new URL(req.url);
+  const channelId = url.searchParams.get("channelId");
+
+  // 🛡️ QUOTA SAVER: Serve from cache if available
+  if (videoCache.length > 0) {
+    const randomIndex = Math.floor(Math.random() * videoCache.length);
+    const cachedVideo = videoCache.splice(randomIndex, 1)[0];
+    
+    console.log(`📦 Serving from cache (${videoCache.length} remaining, ${isRefilling ? 'refilling...' : 'idle'})`);
+    
+    // Refill cache in background if running low
+    if (videoCache.length < CACHE_REFILL_THRESHOLD && !isRefilling) {
+      console.log(`🔄 Cache low, refilling in background...`);
+      refillCache(channelId).catch(err => console.error('Refill error:', err));
+    }
+    
+    return NextResponse.json(cachedVideo);
+  }
+
+  // Cache empty - make API call
+  console.log(`🌐 Cache empty, fetching from YouTube API...`);
+  const videos = await fetchVideosFromAPI(channelId);
+  
+  if (videos.length === 0) {
+    return NextResponse.json({ error: "No videos found" }, { status: 404 });
+  }
+
+  // Take one video, cache the rest
+  const pick = videos[Math.floor(Math.random() * videos.length)];
+  const remaining = videos.filter(v => v.id !== pick.id);
+  videoCache.push(...remaining.slice(0, CACHE_MAX_SIZE - 1));
+  
+  console.log(`✅ Fetched ${videos.length} shorts, serving 1, cached ${videoCache.length}`);
+  
+  return NextResponse.json(pick);
 }
