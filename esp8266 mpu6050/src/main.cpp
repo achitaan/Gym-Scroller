@@ -73,19 +73,34 @@ bool calibrated = false;
 unsigned long lastRepTime = 0;
 bool inMotion = false;
 bool wsConnected = false;
+bool socketIOConnected = false;
 
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {
         case WStype_DISCONNECTED:
             Serial.println("[WS] Disconnected");
             wsConnected = false;
+            socketIOConnected = false;
             break;
         case WStype_CONNECTED:
-            Serial.println("[WS] Connected");
+            Serial.println("[WS] WebSocket Connected");
             wsConnected = true;
+            // Send Socket.IO connect packet (40 = connect to default namespace)
+            webSocket.sendTXT("40");
+            Serial.println("[SocketIO] Sent connect packet (40)");
             break;
         case WStype_TEXT:
             Serial.printf("[WS] Message: %s\n", payload);
+            // Check if this is Socket.IO connection confirmation
+            String msg = String((char*)payload);
+            if (msg.startsWith("40")) {
+                // Socket.IO connected successfully
+                socketIOConnected = true;
+                Serial.println("[SocketIO] Connected and ready to send data");
+            } else if (msg.startsWith("0")) {
+                // Socket.IO protocol messages (ping/pong, etc.)
+                Serial.printf("[SocketIO] Protocol: %s\n", payload);
+            }
             break;
     }
 }
@@ -194,8 +209,8 @@ void loop() {
     // Also log to Serial
     Serial.println(repJson);
 
-    // Send via WebSocket if connected
-    if (wsConnected) {
+    // Send via WebSocket if Socket.IO is fully connected
+    if (socketIOConnected) {
         // Socket.IO format: 42["eventName", data]
         String socketIOMsg = "42[\"sensorData\",";
         socketIOMsg += repJson;
