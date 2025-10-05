@@ -391,7 +391,7 @@ void loop() {
     // DIRECTION-CHANGE REP DETECTION (Using Gyroscope)
     // ========================================================================
 
-    float currentGyroZ = g.gyro.z;  // Angular velocity on Z-axis (rad/s)
+    float currentGyroZ = g.gyro.x;  // Angular velocity on Z-axis (rad/s)
 
     // State machine logic
     if (currentPhase == WAITING) {
