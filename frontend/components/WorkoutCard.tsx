@@ -3,7 +3,7 @@
 import { Workout } from "@/lib/hevy-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, TrendingUp } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { format } from "date-fns";
 
 interface WorkoutCardProps {
@@ -19,6 +19,10 @@ export function WorkoutCard({ workout, onClick }: WorkoutCardProps) {
   const totalSets = workout.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
   const completedSets = workout.exercises.reduce(
     (sum, ex) => sum + ex.sets.filter(s => s.completed).length,
+    0
+  );
+  const totalReps = workout.exercises.reduce(
+    (sum, ex) => sum + ex.sets.filter(s => s.completed).reduce((a, s) => a + (s.reps || 0), 0),
     0
   );
 
@@ -43,15 +47,8 @@ export function WorkoutCard({ workout, onClick }: WorkoutCardProps) {
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 text-neutral-600 dark:text-neutral-400">
-              <Clock className="h-4 w-4" />
-              <span>{workout.duration || 0} min</span>
-            </div>
-            <div className="flex items-center gap-1 text-neutral-600 dark:text-neutral-400">
-              <TrendingUp className="h-4 w-4" />
-              <span>{workout.totalVolume?.toLocaleString() || 0} kg</span>
-            </div>
+          <div className="text-neutral-600 dark:text-neutral-400">
+            {totalReps} reps
           </div>
           <div className="text-neutral-500 dark:text-neutral-400">
             {completedSets}/{totalSets} sets

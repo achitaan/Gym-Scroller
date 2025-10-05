@@ -6,7 +6,8 @@ import { WorkoutCard } from "@/components/WorkoutCard";
 import { Navbar } from "@/components/Navbar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "lucide-react";
-import { previousWorkouts, calculateWorkoutVolume } from "@/lib/mock-data";
+import { calculateWorkoutVolume } from "@/lib/mock-data";
+import { loadHistory } from "@/lib/history-storage";
 import { format } from "date-fns";
 
 /**
@@ -16,12 +17,13 @@ import { format } from "date-fns";
  */
 export default function HistoryPage() {
   const router = useRouter();
-  const [workouts] = useState(
-    previousWorkouts.map(w => ({
+  const [workouts] = useState(() => {
+    const items = loadHistory();
+    return items.map(w => ({
       ...w,
       totalVolume: w.totalVolume || calculateWorkoutVolume(w),
-    }))
-  );
+    }));
+  });
 
   // Group workouts by date
   const groupedWorkouts = workouts.reduce((groups, workout) => {

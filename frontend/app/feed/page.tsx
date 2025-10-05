@@ -11,6 +11,8 @@ import { useAdManager } from "@/lib/use-ad-manager";
 import { AdOverlay } from "@/components/AdOverlay";
 import { useSearchParams } from 'next/navigation';
 import { ALIGN_CANDIDATES, DEFAULT_ALIGN } from '@/lib/music-align';
+import { addWorkout } from '@/lib/history-storage';
+import type { Workout as HevyWorkout } from '@/lib/hevy-types';
 
 /**
  * Feed Page - YouTube Shorts during rest periods
@@ -23,6 +25,9 @@ export default function FeedPage() {
   const { subscribeToSensorData, subscribeToReps } = useSocket();
   const [incomingPreset, setIncomingPreset] = useState<null | { exercises: Array<{ exercise: any; sets?: Array<{ weightKg?: number }> }> }>(null);
   const [currentReps, setCurrentReps] = useState(0);
+  const [currentExerciseIdx, setCurrentExerciseIdx] = useState(0);
+  const [currentSetIdx, setCurrentSetIdx] = useState(0);
+  const [setReps, setSetReps] = useState<number[][]>([]); // per exercise -> per set reps counted
   const { videos, loading, error, fetchShort, fetchMultiple } = useYouTubeShorts();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRepLocked, setIsRepLocked] = useState(false);
@@ -60,6 +65,8 @@ export default function FeedPage() {
   const clearPausedIndexRef = useRef<(() => void) | null>(null);
   const currentIndexRef = useRef<number>(0);
   const skippedAdOnConcentricRef = useRef<boolean>(false);
+  const currentExerciseIdxRef = useRef(0);
+  const currentSetIdxRef = useRef(0);
 
   // Keep a live ref of videos length to avoid stale closures
   useEffect(() => {
@@ -152,6 +159,15 @@ export default function FeedPage() {
       const parsed = JSON.parse(json);
       if (parsed && parsed.exercises) {
         setIncomingPreset(parsed);
+        // initialize per-set rep tracking and indices
+        const repsInit: number[][] = parsed.exercises.map((ex: any) => {
+          const count = ex.sets && ex.sets.length > 0 ? ex.sets.length : 3;
+          return new Array(count).fill(0);
+        });
+        setSetReps(repsInit);
+        setCurrentExerciseIdx(0);
+        setCurrentSetIdx(0);
+        setCurrentReps(0);
         // When a workout starts via preset, try to load a random mp3
         const startParam = searchParams.get('musicStart');
         if (startParam) {
@@ -197,6 +213,10 @@ export default function FeedPage() {
     }
   }, [searchParams]);
 
+  // keep refs for indices in rep subscription
+  useEffect(() => { currentExerciseIdxRef.current = currentExerciseIdx; }, [currentExerciseIdx]);
+  useEffect(() => { currentSetIdxRef.current = currentSetIdx; }, [currentSetIdx]);
+
   // Auto-scroll to current video
   useEffect(() => {
     if (containerRef.current && videos.length > 0) {
@@ -234,6 +254,16 @@ export default function FeedPage() {
   useEffect(() => {
     const unsubscribe = subscribeToReps((rep) => {
       if (rep.valid) setCurrentReps((n) => n + 1);
+      if (rep.valid) {
+        setSetReps((prev) => {
+          const ei = currentExerciseIdxRef.current;
+          const si = currentSetIdxRef.current;
+          if (!prev[ei] || typeof prev[ei][si] !== 'number') return prev;
+          const next = prev.map((row) => row.slice());
+          next[ei][si] += 1;
+          return next;
+        });
+      }
       // When first rep comes in, mark set start and reset estimates
       if (setStartTimeRef.current == null) {
         setStartTimeRef.current = Date.now();
@@ -314,6 +344,92 @@ export default function FeedPage() {
       switchTimeoutIdRef.current = null;
     };
   }, [subscribeToReps, audioUnlocked]);
+
+  // helpers to navigate sets/exercises
+  const getSetsCount = (exIdx: number) => {
+    const ex = incomingPreset?.exercises?.[exIdx];
+    return ex ? (ex.sets && ex.sets.length > 0 ? ex.sets.length : (setReps[exIdx]?.length || 3)) : 0;
+  };
+
+  const atLastSet = () => {
+    const totalExercises = incomingPreset?.exercises?.length || 0;
+    if (totalExercises === 0) return true;
+    const lastExercise = currentExerciseIdx >= totalExercises - 1;
+    const lastSetInExercise = currentSetIdx >= getSetsCount(currentExerciseIdx) - 1;
+    return lastExercise && lastSetInExercise;
+  };
+
+  const advanceToNextSet = () => {
+    if (!incomingPreset) return;
+    const setsCount = getSetsCount(currentExerciseIdx);
+    if (currentSetIdx < setsCount - 1) {
+      setCurrentSetIdx((i) => i + 1);
+      setCurrentReps(0);
+      return;
+    }
+    // next exercise if available
+    if (currentExerciseIdx < incomingPreset.exercises.length - 1) {
+      setCurrentExerciseIdx((e) => e + 1);
+      setCurrentSetIdx(0);
+      setCurrentReps(0);
+      return;
+    }
+    // already at end — no op here
+  };
+
+  const finishWorkout = () => {
+    try {
+      // Build summary using actual setReps counts
+      const exercisesWithReps = (incomingPreset?.exercises || []).map((ex, exIdx) => {
+        const repsRow = setReps[exIdx] || [];
+        const setsArr = ex.sets && ex.sets.length > 0 ? ex.sets : new Array(repsRow.length).fill(0).map(() => ({} as any));
+        return {
+          ...ex,
+          sets: setsArr.map((set, si) => ({
+            ...set,
+            repsCompleted: repsRow[si] ?? 0,
+          })),
+        };
+      });
+
+      const totalReps = setReps.reduce((sum, row) => sum + row.reduce((a, b) => a + b, 0), 0);
+      const summaryData = {
+        exercises: exercisesWithReps,
+        totalReps,
+        duration: null,
+      };
+      // Persist to history
+      try {
+        const ts = Date.now();
+        const workout: HevyWorkout = {
+          id: `w-${ts}`,
+          name: 'Workout',
+          date: new Date(),
+          completed: true,
+          exercises: (exercisesWithReps as any[]).map((ex: any, exIdx: number) => {
+            const sets = (ex.sets || []).map((s: any, si: number) => ({
+              id: `s-${ts}-${exIdx}-${si}`,
+              reps: s.repsCompleted ?? 0,
+              weight: s.weightKg ?? 0,
+              completed: true,
+            }));
+            return {
+              id: `ex-${ts}-${exIdx}`,
+              name: ex.exercise?.name || 'Exercise',
+              category: ex.exercise?.category || 'other',
+              sets,
+            };
+          }),
+        };
+        addWorkout(workout);
+      } catch {}
+      const payload = JSON.stringify(summaryData);
+      const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
+      router.push(`/workout-summary?data=${encodeURIComponent(b64)}`);
+    } catch (e) {
+      router.push('/workout-summary');
+    }
+  };
 
   // Preload next video when approaching the end
   useEffect(() => {
@@ -586,6 +702,13 @@ export default function FeedPage() {
             <div className="text-xs text-neutral-300">Reps</div>
           </div>
 
+          {/* Current set indicator */}
+          <div className="mb-3 text-center">
+            <div className="text-sm text-neutral-300">
+              Set {Math.min(currentSetIdx + 1, Math.max(1, getSetsCount(currentExerciseIdx)))} of {getSetsCount(currentExerciseIdx)} • {incomingPreset.exercises[currentExerciseIdx]?.exercise?.name || '—'}
+            </div>
+          </div>
+
           <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
             {incomingPreset.exercises.map((ex: any, i: number) => (
               <div key={i} className="space-y-1">
@@ -597,42 +720,28 @@ export default function FeedPage() {
             ))}
           </div>
 
-          {/* End Workout Button */}
-          <button
-            onClick={() => {
-              try {
-                // Prepare workout summary data with per-set rep counts
-                // For now, we'll simulate completed reps per set
-                // Later this can be updated with actual tracking
-                const exercisesWithReps = incomingPreset.exercises.map(ex => ({
-                  ...ex,
-                  sets: ex.sets?.map(set => ({
-                    ...set,
-                    repsCompleted: Math.floor(Math.random() * 12) + 8 // Simulate 8-20 reps per set for now
-                  }))
-                }));
-
-                const summaryData = {
-                  exercises: exercisesWithReps,
-                  totalReps: currentReps,
-                  duration: null, // Can add duration tracking later
-                };
-
-                // Encode summary data
-                const payload = JSON.stringify(summaryData);
-                const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
-
-                // Navigate to workout summary
-                router.push(`/workout-summary?data=${encodeURIComponent(b64)}`);
-              } catch (e) {
-                // Fallback: navigate without data
-                router.push('/workout-summary');
-              }
-            }}
-            className="w-full py-2 px-3 rounded-lg bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-neutral-100 text-sm font-medium transition-colors"
-          >
-            End Workout
-          </button>
+          {/* Progress Buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (atLastSet()) {
+                  finishWorkout();
+                } else {
+                  advanceToNextSet();
+                }
+              }}
+              className="flex-1 py-2 px-3 rounded-lg bg-blue-600/80 hover:bg-blue-600 active:bg-blue-700 text-neutral-100 text-sm font-medium transition-colors"
+            >
+              {atLastSet() ? 'Finish Workout' : 'Next Set'}
+            </button>
+            {/* End Workout Button */}
+            <button
+              onClick={finishWorkout}
+              className="flex-1 py-2 px-3 rounded-lg bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-neutral-100 text-sm font-medium transition-colors"
+            >
+              End Workout
+            </button>
+          </div>
         </div>
       )}
 
