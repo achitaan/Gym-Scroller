@@ -61,10 +61,9 @@ export default function WorkoutSummaryPage() {
         {/* Success Icon */}
         <div className="flex justify-center mb-8">
           <div
-            className="p-4 rounded-full"
-            style={{ backgroundColor: tokens.colors.accent.primary }}
+            className="p-4 rounded-full bg-white"
           >
-            <CheckCircle size={48} color="white" />
+            <CheckCircle size={48} color="black" />
           </div>
         </div>
 
@@ -77,7 +76,7 @@ export default function WorkoutSummaryPage() {
                 style={{ backgroundColor: tokens.colors.background.secondary }}
               >
                 <div className="flex justify-center mb-2">
-                  <Dumbbell size={24} style={{ color: tokens.colors.accent.primary }} />
+                  <Dumbbell size={24} style={{ color: tokens.colors.text.primary }} />
                 </div>
                 <div
                   className="text-2xl font-bold mb-1"
@@ -98,7 +97,7 @@ export default function WorkoutSummaryPage() {
                 style={{ backgroundColor: tokens.colors.background.secondary }}
               >
                 <div className="flex justify-center mb-2">
-                  <Clock size={24} style={{ color: tokens.colors.accent.primary }} />
+                  <Clock size={24} style={{ color: tokens.colors.text.primary }} />
                 </div>
                 <div
                   className="text-2xl font-bold mb-1"
@@ -130,31 +129,54 @@ export default function WorkoutSummaryPage() {
                     className="p-3 rounded-lg"
                     style={{ backgroundColor: tokens.colors.background.secondary }}
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div
-                          className="font-medium"
-                          style={{ color: tokens.colors.text.primary }}
-                        >
-                          {ex.exercise.name}
-                        </div>
-                        <div
-                          className="text-sm"
-                          style={{ color: tokens.colors.text.secondary }}
-                        >
-                          {ex.sets?.length ?? 0} sets
-                        </div>
+                    <div className="mb-3">
+                      <div
+                        className="font-medium"
+                        style={{ color: tokens.colors.text.primary }}
+                      >
+                        {ex.exercise.name}
                       </div>
                       <div
-                        className="text-sm font-medium"
-                        style={{ color: tokens.colors.accent.primary }}
+                        className="text-sm"
+                        style={{ color: tokens.colors.text.secondary }}
                       >
-                        {ex.sets && ex.sets.length > 0 ? 
-                          ex.sets.map((s: any) => s.weightKg ? `${s.weightKg}kg` : '—').join(', ') 
-                          : 'No weights'
-                        }
+                        {ex.sets?.length ?? 0} sets completed
                       </div>
                     </div>
+                    
+                    {/* Set Details */}
+                    {ex.sets && ex.sets.length > 0 && (
+                      <div className="space-y-2">
+                        {ex.sets.map((set: any, setIndex: number) => (
+                          <div
+                            key={setIndex}
+                            className="flex items-center justify-between p-2 rounded"
+                            style={{ backgroundColor: tokens.colors.background.tertiary }}
+                          >
+                            <div
+                              className="text-sm"
+                              style={{ color: tokens.colors.text.secondary }}
+                            >
+                              Set {setIndex + 1}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="text-sm font-medium"
+                                style={{ color: tokens.colors.text.primary }}
+                              >
+                                {set.repsCompleted ?? 0} reps
+                              </div>
+                              <div
+                                className="text-sm"
+                                style={{ color: tokens.colors.text.primary }}
+                              >
+                                {set.weightKg ? `${set.weightKg}kg` : '—'}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -175,9 +197,10 @@ export default function WorkoutSummaryPage() {
         <div className="space-y-3">
           <button
             onClick={() => router.push('/today')}
-            className="w-full py-4 rounded-xl font-semibold text-white active:opacity-80"
+            className="w-full py-4 rounded-xl font-semibold active:opacity-80"
             style={{
-              backgroundColor: tokens.colors.accent.primary,
+              backgroundColor: tokens.colors.text.primary,
+              color: '#000',
               minHeight: tokens.touchTarget.min,
             }}
           >

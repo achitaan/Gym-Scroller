@@ -278,7 +278,7 @@ export default function FeedPage() {
 
       {/* Rep-locked badge */}
       {isRepLocked && !isResting && (
-        <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-full backdrop-blur-md bg-blue-600/90 flex items-center gap-2">
+        <div className="fixed top-4 right-4 z-50 px-4 py-2 rounded-full backdrop-blur-md bg-white/20 flex items-center gap-2">
           <Lock className="h-4 w-4 text-white" />
           <span className="text-sm font-medium text-white">Rep-locked</span>
         </div>
@@ -330,9 +330,19 @@ export default function FeedPage() {
           <button
             onClick={() => {
               try {
-                // Prepare workout summary data
+                // Prepare workout summary data with per-set rep counts
+                // For now, we'll simulate completed reps per set
+                // Later this can be updated with actual tracking
+                const exercisesWithReps = incomingPreset.exercises.map(ex => ({
+                  ...ex,
+                  sets: ex.sets?.map(set => ({
+                    ...set,
+                    repsCompleted: Math.floor(Math.random() * 12) + 8 // Simulate 8-20 reps per set for now
+                  }))
+                }));
+
                 const summaryData = {
-                  exercises: incomingPreset.exercises,
+                  exercises: exercisesWithReps,
                   totalReps: currentReps,
                   duration: null, // Can add duration tracking later
                 };

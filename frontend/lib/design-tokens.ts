@@ -17,7 +17,7 @@ export const tokens = {
       disabled: '#525252',
     },
     accent: {
-      primary: '#3B82F6', // Blue for primary actions
+      primary: '#FFFFFF', // White for primary actions (black & white theme)
       secondary: '#8B5CF6', // Purple for secondary
       success: '#10B981', // Green for success/PRs
       warning: '#F59E0B', // Amber for warnings

@@ -2,6 +2,8 @@
 import { tokens } from '@/lib/design-tokens';
 import { Activity, Calendar, TrendingUp, Zap } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { EXERCISES, findExerciseByName } from '@/lib/exercise-catalog';
 
 // Mock data - replace with actual data from backend
 const mockDailyPlan = {
@@ -15,6 +17,37 @@ const mockDailyPlan = {
 };
 
 export default function TodayPage() {
+  const router = useRouter();
+
+  // Determine PPL rotation based on day index (0=Sun)
+  const dayIndex = new Date().getDay();
+  const rotation = ['Push', 'Pull', 'Legs'];
+  const rotationIdx = dayIndex % 3;
+  const todayBlock = rotation[rotationIdx] as 'Push' | 'Pull' | 'Legs';
+
+  // Define PPL templates using catalog names
+  const PPL_TEMPLATES: Record<typeof todayBlock, string[]> = {
+    Push: ['Bench Press', 'Overhead Press', 'Incline Bench Press', 'Lateral Raises', 'Dips'],
+    Pull: ['Deadlift', 'Pull-ups', 'Barbell Row', 'Lat Pulldown', 'Barbell Curls'],
+    Legs: ['Back Squat', 'Romanian Deadlift', 'Leg Press', 'Bulgarian Split Squat', 'Calf Raises'],
+  } as const;
+
+  const recommendedNames = PPL_TEMPLATES[todayBlock];
+  const recommendedExercises = recommendedNames
+    .map(name => findExerciseByName(name))
+    .filter((e): e is NonNullable<typeof e> => Boolean(e))
+    .map(exercise => ({ exercise, sets: [{}, {}, {}] }));
+
+  const startRecommended = () => {
+    try {
+      const payload = JSON.stringify({ exercises: recommendedExercises });
+      const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
+      router.push(`/feed?preset=${encodeURIComponent(b64)}`);
+    } catch {
+      router.push('/feed');
+    }
+  };
+
   return (
     <main
       className="min-h-screen p-4 pb-20"
@@ -58,15 +91,15 @@ export default function TodayPage() {
           </div>
         </div>
 
-        {/* Next Lifts */}
+        {/* Recommended Lift */}
         <h2
           className="text-lg font-semibold mb-3"
           style={{ color: tokens.colors.text.primary, fontSize: tokens.typography.heading.size }}
         >
-          Today's Lifts
+          Recommended Lift • {todayBlock}
         </h2>
         <div className="space-y-2 mb-5">
-          {mockDailyPlan.nextLifts.map((lift, index) => (
+          {recommendedExercises.map((entry, index) => (
             <div
               key={index}
               className="flex items-center gap-3 p-3 rounded-lg"
@@ -76,29 +109,32 @@ export default function TodayPage() {
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
                 style={{
                   backgroundColor: tokens.colors.accent.primary,
-                  color: tokens.colors.text.primary,
+                  color: '#000',
                 }}
               >
                 {index + 1}
               </div>
-              <span style={{ color: tokens.colors.text.primary, fontSize: '16px' }}>{lift}</span>
+              <div className="flex-1">
+                <div style={{ color: tokens.colors.text.primary, fontSize: '16px' }}>{entry.exercise.name}</div>
+                <div className="text-xs" style={{ color: tokens.colors.text.secondary }}>{entry.sets.length} sets • add weights in setup</div>
+              </div>
             </div>
           ))}
         </div>
 
-        {/* Start Workout Button */}
-        <Link href="/train">
-          <button
-            className="w-full py-4 rounded-xl font-semibold text-white transition-opacity active:opacity-80"
-            style={{
-              backgroundColor: tokens.colors.accent.primary,
-              borderRadius: tokens.radius.lg,
-              minHeight: tokens.touchTarget.min,
-            }}
-          >
-            {mockDailyPlan.hasActiveWorkout ? 'Resume Workout' : 'Start Workout'}
-          </button>
-        </Link>
+        {/* Start Recommended Button */}
+        <button
+          onClick={startRecommended}
+          className="w-full py-4 rounded-xl font-semibold transition-opacity active:opacity-80"
+          style={{
+            backgroundColor: tokens.colors.accent.primary,
+            color: '#000',
+            borderRadius: tokens.radius.lg,
+            minHeight: tokens.touchTarget.min,
+          }}
+        >
+          Start Recommended
+        </button>
       </div>
 
       {/* Streak & Quality PRs */}

@@ -43,8 +43,8 @@ export function StatsCard({
             )}
           </div>
           {Icon && (
-            <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950">
-              <Icon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <div className="p-3 rounded-xl bg-neutral-100 dark:bg-neutral-800">
+              <Icon className="h-6 w-6 text-neutral-900 dark:text-white" />
             </div>
           )}
         </div>

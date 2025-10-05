@@ -149,7 +149,7 @@ export default function ShortsPage() {
                 href={`https://youtube.com/watch?v=${video.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-blue-400 hover:text-blue-300 mt-2 inline-block"
+                className="text-xs text-white/80 hover:text-white mt-2 inline-block"
               >
                 Open on YouTube →
               </a>

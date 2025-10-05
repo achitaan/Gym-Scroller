@@ -38,8 +38,8 @@ export default function HistoryPage() {
       {/* Header */}
       <header className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-6 py-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950">
-            <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+          <div className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-800">
+            <Calendar className="h-6 w-6 text-neutral-900 dark:text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-bold">Workout History</h1>

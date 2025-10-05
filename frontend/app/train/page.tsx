@@ -101,9 +101,10 @@ export default function TrainPage() {
 
           <button
             onClick={() => setState('setup')}
-            className="flex items-center gap-3 px-8 py-4 rounded-xl font-semibold text-white active:opacity-80"
+            className="flex items-center gap-3 px-8 py-4 rounded-xl font-semibold active:opacity-80"
             style={{
-              backgroundColor: tokens.colors.accent.primary,
+              backgroundColor: tokens.colors.text.primary,
+              color: '#000',
               minHeight: tokens.touchTarget.min,
             }}
           >
@@ -194,9 +195,10 @@ export default function TrainPage() {
           {/* Next Set Button */}
           <button
             onClick={handleNextSet}
-            className="px-8 py-4 rounded-xl font-semibold text-white active:opacity-80"
+            className="px-8 py-4 rounded-xl font-semibold active:opacity-80"
             style={{
-              backgroundColor: tokens.colors.accent.primary,
+              backgroundColor: tokens.colors.text.primary,
+              color: '#000',
               minHeight: tokens.touchTarget.min,
             }}
           >

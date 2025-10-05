@@ -131,7 +131,7 @@ export default function WorkoutDetail() {
 
       {/* Rest Timer */}
       {isRestTimerActive && restTimer > 0 && (
-        <div className="bg-blue-600 text-white px-6 py-3 flex items-center justify-between">
+        <div className="bg-white text-black px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5" />
             <span className="font-semibold">Rest Timer</span>
@@ -140,7 +140,7 @@ export default function WorkoutDetail() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-white hover:bg-white/20"
+              className="text-black hover:bg-black/10"
               onClick={() => setShowRestShorts(true)}
             >
               <Film className="h-4 w-4 mr-2" />

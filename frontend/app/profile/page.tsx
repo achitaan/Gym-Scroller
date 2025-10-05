@@ -27,7 +27,7 @@ export default function ProfilePage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <Avatar className="h-20 w-20">
-              <AvatarFallback className="bg-gradient-to-br from-blue-600 to-blue-400 text-white text-2xl font-bold">
+              <AvatarFallback className="bg-neutral-800 text-white text-2xl font-bold">
                 {stats.name.split(' ').map(n => n[0]).join('')}
               </AvatarFallback>
             </Avatar>
@@ -54,7 +54,7 @@ export default function ProfilePage() {
         {/* Stats overview */}
         <div className="grid grid-cols-3 gap-3">
           <div className="text-center p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800">
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.totalWorkouts}</div>
+            <div className="text-2xl font-bold text-neutral-900 dark:text-white">{stats.totalWorkouts}</div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Workouts</p>
           </div>
           <div className="text-center p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800">

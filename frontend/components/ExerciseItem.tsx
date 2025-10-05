@@ -31,8 +31,8 @@ export function ExerciseItem({ exercise, onSetUpdate }: ExerciseItemProps) {
         <AccordionTrigger className="hover:no-underline">
           <div className="flex items-center justify-between w-full pr-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950">
-                <Dumbbell className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <div className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                <Dumbbell className="h-4 w-4 text-neutral-900 dark:text-white" />
               </div>
               <div className="text-left">
                 <h3 className="font-semibold">{exercise.name}</h3>
