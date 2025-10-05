@@ -51,16 +51,17 @@
 #include <WebSocketsClient.h>
 #include <Wire.h>
 
-// WiFi Access Point credentials
-const char* AP_SSID = "GymScroller-MPU6050";
-const char* AP_PASSWORD = "gymscroller123";
+// WiFi Client credentials - Connect to your existing network
+// TODO: Replace these with your actual WiFi credentials
+const char* WIFI_SSID = "iPhone (89)";  // Replace with your WiFi network name
+const char* WIFI_PASSWORD = "bananafish";  // Replace with your WiFi password
 
-// WebSocket server settings (laptop will connect to this AP and run backend on
-// its own IP) Default: connect to gateway IP (192.168.4.1 is ESP8266 AP
-// default, but laptop will be 192.168.4.2)
-const char* wsHost = "192.168.4.2";
-// Laptop's IP when connected to ESP8266 AP
-const uint16_t wsPort = 3001;
+// WebSocket server settings - Your computer's local IP address
+// TODO: Replace with your computer's actual IP address (use 'ipconfig' on
+// Windows or 'ifconfig' on Mac/Linux)
+const char* wsHost =
+    "172.20.10.2";  // Replace with your computer's IP (e.g., 192.168.1.100)
+const uint16_t wsPort = 8000;  // Backend server port
 const char* wsPath = "/socket.io/?EIO=4&transport=websocket";
 
 Adafruit_MPU6050 mpu;
@@ -142,12 +143,15 @@ const float ACCEL_ZERO_TOLERANCE =
     0.5;  // m/s² - values within this range treated as 0
 
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+    ESP.wdtFeed();  // Feed watchdog at start of event handler
+
     switch (type) {
         case WStype_DISCONNECTED:
             Serial.println("[WS] ❌ Disconnected - will attempt reconnection");
             wsConnected = false;
             socketIOConnected = false;
             lastReconnectAttempt = millis();  // Start reconnection timer
+            ESP.wdtFeed();
             break;
         case WStype_CONNECTED:
             Serial.println("[WS] ✅ WebSocket Connected");
@@ -157,6 +161,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
             // Send Socket.IO connect packet (40 = connect to default namespace)
             webSocket.sendTXT("40");
             Serial.println("[SocketIO] Sent connect packet (40)");
+            ESP.wdtFeed();
             break;
         case WStype_TEXT: {
             Serial.printf("[WS] Message: %s\n", payload);
@@ -174,45 +179,97 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
                 // Pong response from server
                 Serial.println("[SocketIO] 💓 Pong received");
             }
+            ESP.wdtFeed();
             break;
         }
         case WStype_ERROR:
             Serial.printf("[WS] ⚠️ Error: %s\n", payload);
+            ESP.wdtFeed();
             break;
         case WStype_PING:
             Serial.println("[WS] Ping received");
+            ESP.wdtFeed();
             break;
         case WStype_PONG:
             Serial.println("[WS] 💓 Pong received");
+            ESP.wdtFeed();
             break;
     }
+
+    ESP.wdtFeed();  // Feed watchdog at end of event handler
 }
 
 void setup() {
-    Serial.begin(9600);
+    Serial.begin(115200);  // Increased baud rate for faster serial output
+    delay(100);
 
-    // Setup WiFi Access Point
-    Serial.println("Setting up WiFi AP...");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    // Feed watchdog during setup
+    ESP.wdtFeed();
 
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP);
-    Serial.printf("Connect your laptop to '%s' and run backend on %s:%d\n",
-                  AP_SSID, wsHost, wsPort);
+    Serial.println("\n🚀 Starting ESP8266 Gym Tracker...");
+    Serial.println("=====================================");
+
+    // Configure WiFi as Station (Client) Mode
+    WiFi.mode(WIFI_STA);  // Station mode - connect to existing network
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
+    ESP.wdtFeed();
+
+    // Connect to existing WiFi network
+    Serial.printf("📡 Connecting to WiFi: %s\n", WIFI_SSID);
+    // Scan for available networks first
+    Serial.println("🔍 Scanning for WiFi networks...");
+    int n = WiFi.scanNetworks();
+    Serial.printf("Found %d networks:\n", n);
+    for (int i = 0; i < n; i++) {
+        Serial.printf(
+            "  %d: %s (Signal: %d dBm, Channel: %d, %s)\n", i + 1,
+            WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i),
+            WiFi.encryptionType(i) == ENC_TYPE_NONE ? "Open" : "Encrypted");
+    }
+    Serial.println();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+    // Wait for connection with timeout
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 60) {
+        delay(500);
+        Serial.print(".");
+        ESP.wdtFeed();
+        attempts++;
+    }
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("✅ WiFi connected successfully!");
+        Serial.printf("📍 ESP8266 IP Address: %s\n",
+                      WiFi.localIP().toString().c_str());
+        Serial.printf("🌐 Gateway: %s\n", WiFi.gatewayIP().toString().c_str());
+        Serial.printf("📶 Signal Strength: %d dBm\n", WiFi.RSSI());
+        Serial.printf("🔌 Will connect to backend at: ws://%s:%d\n", wsHost,
+                      wsPort);
+    } else {
+        Serial.println("❌ WiFi connection FAILED!");
+        Serial.println("⚠️ Please check your WiFi credentials in main.cpp");
+        Serial.println("⚠️ Restarting in 10 seconds...");
+        delay(10000);
+        ESP.restart();
+    }
+    ESP.wdtFeed();
 
     // Setup MPU6050
     if (!mpu.begin()) {
         Serial.println("Failed to find MPU6050 chip");
         while (1) {
             delay(10);
+            ESP.wdtFeed();  // Feed watchdog in error loop
         }
     }
     mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
     mpu.setGyroRange(MPU6050_RANGE_250_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
     Serial.println("MPU6050 Ready");
+    ESP.wdtFeed();
 
     // Start accelerometer calibration
     calibrationStartTime = millis();
@@ -227,10 +284,19 @@ void setup() {
         15000, 3000,
         2);  // Ping every 15s, timeout 3s, 2 disconnects to trigger reconnect
     Serial.println("[WS] WebSocket initialized with heartbeat monitoring");
+    ESP.wdtFeed();
+
+    Serial.println("✅ Setup complete - entering main loop");
 }
 
 void loop() {
+    // CRITICAL: Feed watchdog timer to prevent resets during long operations
+    ESP.wdtFeed();
+
     webSocket.loop();  // Handle WebSocket events
+
+    // Feed watchdog after socket processing
+    ESP.wdtFeed();
 
     // Manual reconnection logic if auto-reconnect fails
     if (!wsConnected) {
@@ -250,6 +316,7 @@ void loop() {
             webSocket.disconnect();
             delay(100);
             webSocket.begin(wsHost, wsPort, wsPath);
+            ESP.wdtFeed();  // Feed watchdog after reconnection
         }
     }
 
@@ -260,11 +327,26 @@ void loop() {
             lastPingTime = now;
             webSocket.sendTXT("2");  // Socket.IO ping packet
             Serial.println("[SocketIO] 💓 Sending ping");
+            ESP.wdtFeed();  // Feed watchdog after sending
+        }
+    }
+
+    // Periodic heap monitoring (every 10 seconds)
+    static unsigned long lastHeapCheck = 0;
+    unsigned long now = millis();
+    if (now - lastHeapCheck > 10000) {
+        lastHeapCheck = now;
+        uint32_t freeHeap = ESP.getFreeHeap();
+        Serial.printf("📊 Heap: %u bytes | WiFi: %d | Reps: %d\n", freeHeap,
+                      WiFi.status(), repCount);
+        if (freeHeap < 10000) {
+            Serial.println("⚠️ WARNING: Low heap memory!");
         }
     }
 
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
+    ESP.wdtFeed();  // Feed watchdog after sensor read
 
     // Handle accelerometer calibration phase
     if (isCalibrating) {
@@ -406,11 +488,13 @@ void loop() {
             socketIOMsg = "42[\"sensorData\",\"waiting\"]";
         }
         webSocket.sendTXT(socketIOMsg);
+        ESP.wdtFeed();  // Feed watchdog after sending data
 
         // Update last states after sending
         lastPhase = currentPhase;
         lastFailureState = failureDetected;
     }
 
-    delay(20);  // ~50Hz sampling
+    delay(20);      // ~50Hz sampling
+    ESP.wdtFeed();  // Final watchdog feed before loop restart
 }

@@ -171,12 +171,30 @@ if __name__ == "__main__":
     # Register signal handlers
     signal.signal(signal.SIGTERM, shutdown_handler)
 
+    # Get local IP address for display
+    import socket
+
+    try:
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+    except Exception:
+        local_ip = "unknown"
+
     # Run the server
-    port = int(os.getenv("PORT", "3001"))
+    port = int(os.getenv("PORT", "8000"))  # Changed default port to 8000
+
+    print("\n" + "=" * 50)
+    print("🚀 Gym Scroller Backend Starting...")
+    print("=" * 50)
+    print(f"📍 Local access:   http://127.0.0.1:{port}")
+    print(f"🌐 Network access: http://{local_ip}:{port}")
+    print(f"🔌 ESP8266 should connect to: {local_ip}:{port}")
+    print(f"💻 Frontend should use: http://{local_ip}:{port}")
+    print("=" * 50 + "\n")
 
     uvicorn.run(
         "main:socket_app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # Listen on all network interfaces (allows ESP8266 + Frontend connections)
         port=port,
         reload=True,
         log_level="info",

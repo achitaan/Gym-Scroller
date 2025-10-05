@@ -19,13 +19,13 @@ interface ShortsFeedProps {
 }
 
 export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeedProps) {
-  const { lastRep, shortsQueue, subscribeToReps } = useSocket()
+  const { sensorState, subscribeToSensorData } = useSocket()
   const [videos, setVideos] = useState<ShortsVideo[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [repLockEnabled, setRepLockEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
   const [players, setPlayers] = useState<Map<number, YT.Player>>(new Map())
   const containerRef = useRef<HTMLDivElement>(null)
+  const lastSensorStateRef = useRef<string | null>(null)
 
   // Fetch videos from API
   useEffect(() => {
@@ -59,19 +59,19 @@ export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeed
     fetchVideos()
   }, [])
 
-  // Listen for valid reps to advance
+  // Listen for concentric phase to advance
   useEffect(() => {
-    if (!repLockEnabled || isInRestPeriod) return
-
-    const unsubscribe = subscribeToReps((rep) => {
-      if (rep.valid && currentIndex < videos.length - 1) {
-        // Valid rep! Advance to next video
+    const unsubscribe = subscribeToSensorData((state) => {
+      // Advance when transitioning to concentric phase (lifting motion detected)
+      if (state === 'concentric' && lastSensorStateRef.current !== 'concentric') {
+        console.log('🏋️ Concentric detected - advancing to next short');
         advanceToNext()
       }
+      lastSensorStateRef.current = state
     })
 
     return () => unsubscribe()
-  }, [repLockEnabled, isInRestPeriod, currentIndex, videos.length, subscribeToReps])
+  }, [currentIndex, videos.length, subscribeToSensorData])
 
   // Scroll to current video
   useEffect(() => {
@@ -116,12 +116,6 @@ export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeed
     }
   }
 
-  const goToPrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
-    }
-  }
-
   const fetchMoreVideos = async () => {
     try {
       const res = await fetch("/api/youtube", { cache: "no-store" })
@@ -144,27 +138,7 @@ export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeed
     })
   }
 
-  // Touch support for manual swipe when rep-lock is off or during rest
-  const touchStartY = useRef(0)
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (repLockEnabled && !isInRestPeriod) return // Don't allow swipe when rep-locked
-    touchStartY.current = e.touches[0].clientY
-  }
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (repLockEnabled && !isInRestPeriod) return // Don't allow swipe when rep-locked
-
-    const touchEndY = e.changedTouches[0].clientY
-    const diff = touchStartY.current - touchEndY
-
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) {
-        advanceToNext()
-      } else {
-        goToPrevious()
-      }
-    }
-  }
+  // Touch/scroll interactions disabled - advancement only via concentric sensor state
 
   if (loading && videos.length === 0) {
     return (
@@ -190,27 +164,18 @@ export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeed
         </button>
       )}
 
-      {/* Rep-lock status badge */}
+      {/* Sensor status badge */}
       <div className="absolute top-4 right-4 z-20">
-        {repLockEnabled && !isInRestPeriod && (
-          <Badge className="bg-success/90 text-white border-success/20 backdrop-blur-sm flex items-center gap-2 px-3 py-2">
-            <Zap className="w-4 h-4" strokeWidth={2} />
-            Rep-Locked
-          </Badge>
-        )}
-        {isInRestPeriod && (
-          <Badge className="bg-warning/90 text-black border-warning/20 backdrop-blur-sm flex items-center gap-2 px-3 py-2">
-            Rest - Scroll Free
-          </Badge>
-        )}
+        <Badge className="bg-success/90 text-white border-success/20 backdrop-blur-sm flex items-center gap-2 px-3 py-2">
+          <Zap className="w-4 h-4" strokeWidth={2} />
+          Sensor-Controlled
+        </Badge>
       </div>
 
-      {/* Video container */}
+      {/* Video container - no scroll, controlled by sensor */}
       <div
         ref={containerRef}
-        className="h-full w-full snap-y snap-mandatory overflow-y-scroll scrollbar-hide"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        className="h-full w-full overflow-hidden"
       >
         {videos.map((video, index) => (
           <div
@@ -236,12 +201,17 @@ export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeed
               )}
             </div>
 
-            {/* Rep-lock indicator on current video */}
-            {index === currentIndex && repLockEnabled && !isInRestPeriod && (
+            {/* Concentric sensor indicator on current video */}
+            {index === currentIndex && (
               <div className="absolute bottom-32 left-0 right-0 px-4 pointer-events-none">
                 <div className="bg-success/20 backdrop-blur-sm border border-success/40 rounded-lg p-3 text-center text-white">
                   <Zap className="w-5 h-5 mx-auto mb-1 text-success" strokeWidth={2} />
-                  <p className="text-sm font-medium">Complete a clean rep to advance</p>
+                  <p className="text-sm font-medium">Start lifting (concentric) to advance</p>
+                  {sensorState && (
+                    <p className="text-xs mt-1 text-gray-300">
+                      Current: {sensorState}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -253,39 +223,6 @@ export function ShortsFeed({ onBackToTrain, isInRestPeriod = false }: ShortsFeed
       <div className="absolute bottom-4 left-4 px-3 py-1 bg-black/50 backdrop-blur-sm rounded-full text-white text-sm z-10">
         {currentIndex + 1} / {videos.length}
       </div>
-
-      {/* Manual controls (only show during rest or when rep-lock off) */}
-      {(!repLockEnabled || isInRestPeriod) && (
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-4 text-white/70 z-10">
-          <button
-            onClick={goToPrevious}
-            disabled={currentIndex === 0}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed backdrop-blur-sm"
-            aria-label="Previous video"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-          </button>
-          <button
-            onClick={advanceToNext}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm"
-            aria-label="Next video"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Toggle rep-lock (for testing) */}
-      <button
-        onClick={() => setRepLockEnabled(!repLockEnabled)}
-        className="absolute top-16 right-4 z-20 px-3 py-1 bg-black/70 backdrop-blur-sm rounded-full text-white text-xs"
-      >
-        {repLockEnabled ? "Disable" : "Enable"} Rep-Lock
-      </button>
     </div>
   )
 }
