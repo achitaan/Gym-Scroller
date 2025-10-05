@@ -1,12 +1,9 @@
 'use client';
 import { tokens } from '@/lib/design-tokens';
-import { Activity, Calendar, Music4, TrendingUp, Zap } from 'lucide-react';
+import { Activity, Calendar, TrendingUp, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { EXERCISES, findExerciseByName } from '@/lib/exercise-catalog';
-import { useEffect, useState } from 'react';
-// Server-auth flow: use Next API routes; no direct client secret usage here
-type SpotifySong = { name: string; artists: string; playlist: string };
 
 // Mock data - replace with actual data from backend
 const mockDailyPlan = {
@@ -21,63 +18,6 @@ const mockDailyPlan = {
 
 export default function TodayPage() {
   const router = useRouter();
-  const [spotifyStatus, setSpotifyStatus] = useState<'idle' | 'authenticating' | 'ready' | 'error'>('idle');
-  const [spotifyError, setSpotifyError] = useState<string | null>(null);
-  const [spotifySong, setSpotifySong] = useState<SpotifySong | null>(null);
-
-  const getOneSongFromMyPlaylists = async () => {
-    try {
-      setSpotifyError(null);
-      setSpotifyStatus('authenticating');
-      // Try server route; if unauthorized, kick off server-side login
-      const res = await fetch('/api/spotify/one-song', { cache: 'no-store' });
-      if (res.status === 401) {
-        const alreadyTried = typeof window !== 'undefined' ? sessionStorage.getItem('spotify_login_inflight') : null;
-        if (!alreadyTried) {
-          sessionStorage.setItem('spotify_login_inflight', '1');
-          window.location.href = '/api/spotify/login';
-          return;
-        } else {
-          // Avoid infinite loop
-          sessionStorage.removeItem('spotify_login_inflight');
-          setSpotifyStatus('error');
-          setSpotifyError('Still not authorized after login. Ensure you returned to the same host (127.0.0.1 vs localhost) and that the redirect URI is whitelisted in Spotify.');
-          return;
-        }
-      }
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
-      const json = (await res.json()) as SpotifySong;
-      setSpotifySong(json);
-      if (typeof window !== 'undefined') sessionStorage.removeItem('spotify_login_inflight');
-      setSpotifyStatus('ready');
-    } catch (e: any) {
-      setSpotifyError(e?.message ?? 'Failed to fetch a song');
-      setSpotifyStatus('error');
-    }
-  };
-
-  // Read any spotify_error from URL when callback redirects to /today
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    const err = url.searchParams.get('spotify_error');
-    if (err) {
-      setSpotifyError(err);
-      url.searchParams.delete('spotify_error');
-      window.history.replaceState({}, document.title, url.toString());
-    }
-    // one-time auto fetch if returning from Spotify
-    const auto = url.searchParams.get('autofetch');
-    if (auto === '1' && !sessionStorage.getItem('spotify_login_inflight')) {
-      // clean URL then trigger fetch
-      url.searchParams.delete('autofetch');
-      window.history.replaceState({}, document.title, url.toString());
-      // slight delay to ensure hydration complete
-      setTimeout(() => {
-        getOneSongFromMyPlaylists();
-      }, 50);
-    }
-  }, []);
 
   // Determine PPL rotation based on day index (0=Sun)
   const dayIndex = new Date().getDay();
@@ -290,43 +230,6 @@ export default function TodayPage() {
             </button>
           </Link>
         </div>
-      </div>
-
-      {/* Music: Fetch a song from one of my playlists */}
-      <div
-        className="rounded-xl p-5 mt-4"
-        style={{ backgroundColor: tokens.colors.background.secondary, borderRadius: tokens.radius.xl }}
-      >
-        <div className="flex items-center gap-3 mb-3">
-          <div className="p-2 rounded-lg" style={{ backgroundColor: tokens.colors.background.tertiary }}>
-            <Music4 className="h-6 w-6" style={{ color: tokens.colors.text.primary }} />
-          </div>
-          <div className="text-lg font-semibold" style={{ color: tokens.colors.text.primary }}>
-            Music
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={getOneSongFromMyPlaylists}
-            className="flex-1 py-3 rounded-xl font-semibold transition-opacity active:opacity-80"
-            style={{ backgroundColor: tokens.colors.accent.primary, color: '#000' }}
-          >
-            Get a song from my playlists
-          </button>
-        </div>
-        {spotifyStatus === 'authenticating' && !spotifyError && (
-          <div className="mt-3 text-sm" style={{ color: tokens.colors.text.secondary }}>Working…</div>
-        )}
-        {spotifyError && (
-          <div className="mt-3 text-sm" style={{ color: tokens.colors.accent.error }}>{spotifyError}</div>
-        )}
-        {spotifySong && (
-          <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: tokens.colors.background.tertiary }}>
-            <div className="text-sm" style={{ color: tokens.colors.text.secondary }}>From: {spotifySong.playlist}</div>
-            <div className="font-semibold" style={{ color: tokens.colors.text.primary }}>{spotifySong.name}</div>
-            <div className="text-sm" style={{ color: tokens.colors.text.secondary }}>{spotifySong.artists}</div>
-          </div>
-        )}
       </div>
     </main>
   );
