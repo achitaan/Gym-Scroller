@@ -80,6 +80,9 @@ int repCount = 0;
 const float DIRECTION_THRESHOLD =
     1.5;  // rad/s threshold to detect direction change (angular velocity)
 
+// Stall detection timer (moved out of function scope)
+unsigned long stallStart = 0;
+
 // Failure detection based on concentric phase timing
 const int MAX_DURATION_HISTORY = 10;  // Track last 10 reps
 unsigned long concentricDurations[MAX_DURATION_HISTORY] = {0};
@@ -87,11 +90,10 @@ int durationIndex = 0;
 int durationsRecorded = 0;
 unsigned long concentricStartTime = 0;
 float medianConcentricDuration = 0;
-const float FAILURE_THRESHOLD_MULTIPLIER = 1.5;  // 2x median = failure
+const float FAILURE_THRESHOLD_MULTIPLIER = 5;  // 2x median = failure
 bool failureDetected = false;
 bool lastFailureState =
     false;  // Track previous failure state to detect changes
-static unsigned long stallStart = 0;
 
 // Helper function to calculate median
 float calculateMedian(unsigned long* values, int count) {
@@ -403,6 +405,7 @@ void loop() {
             currentPhase = CONCENTRIC;
             concentricStartTime = millis();  // Start timing concentric phase
             failureDetected = false;         // Reset failure flag
+            stallStart = 0;                  // Reset stall timer for new rep
             Serial.print("🏋️  Starting rep - CONCENTRIC phase (");
             Serial.print(concentricIsPositive ? "positive" : "negative");
             Serial.println(" rotation)");
@@ -419,20 +422,18 @@ void loop() {
         //             Serial.print("⚠️  FAILURE DETECTED - Concentric phase ");
         //             Serial.print(concentricElapsed);
         //             Serial.print("ms (");
-        //             Serial.print(concentricElapsed / medianConcentricDuration);
-        //             Serial.println("x median)");
+        //             Serial.print(concentricElapsed /
+        //             medianConcentricDuration); Serial.println("x median)");
         //         }
         //     }
         // }
 
         float absGyro = abs(currentGyroX);
 
-        if (absGyro < 0.3) { // threshold: near-zero angular velocity
+        if (absGyro < 0.3) {  // threshold: near-zero angular velocity
             // If stalled for more than 300ms -> struggling
-            static unsigned long stallStart = 0;
-
             if (stallStart == 0) {
-                stallStart = millis(); // start stall timer
+                stallStart = millis();  // start stall timer
             } else if (millis() - stallStart > 300) {
                 if (!failureDetected) {
                     failureDetected = true;
@@ -465,6 +466,7 @@ void loop() {
             currentPhase = ECCENTRIC;
             failureDetected =
                 false;  // Clear failure flag when transitioning to eccentric
+            stallStart = 0;  // Reset stall timer for eccentric phase
             Serial.print("⬇️  ECCENTRIC phase (concentric took ");
             Serial.print(duration);
             Serial.print("ms, median: ");
