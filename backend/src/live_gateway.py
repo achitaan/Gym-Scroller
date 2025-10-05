@@ -119,7 +119,7 @@ class LiveGateway:
 
         @self.sio.event
         async def sensorData(sid, data):
-            """Handle incoming sensor data from ESP8266 with timeout protection"""
+            """Handle incoming state data from ESP8266 with timeout protection"""
             # Update connection tracking
             if sid in self.connected_clients:
                 self.connected_clients[sid]["chunks_received"] += 1
@@ -149,11 +149,11 @@ class LiveGateway:
                     "message": f"Failed to process sensor data: {str(e)}"
                 }, room=sid)
 
-        async def _process_sensor_chunk(sid: str, data: dict):
-            """Internal method to process sensor chunk with logging"""
-            # Process sensor data for plotting
-            self.process_sensor_data(data)
-            # Broadcast to all connected frontend clients
+        async def _process_sensor_chunk(sid: str, data):
+            """Internal method to process state string with logging"""
+            # Data is now a simple string: "failure", "concentric", "eccentric", or "waiting"
+            print(f"[{sid}] State: {data}")
+            # Broadcast state to all connected frontend clients
             await self.sio.emit("sensorData", data)
 
         # Make the helper function accessible
@@ -372,10 +372,10 @@ class LiveGateway:
                 await asyncio.sleep(5)
 
     def start_background_tasks(self):
-        """Start background tasks (mock events and stale connection monitoring)"""
-        self.update_task = asyncio.create_task(self.start_mock_events())
+        """Start background tasks (stale connection monitoring)"""
+        # self.update_task = asyncio.create_task(self.start_mock_events())  # Disabled - using real ESP8266 data
         self.stale_monitor_task = asyncio.create_task(self.monitor_stale_connections())
-        print("✅ Background tasks started (mock events + stale connection monitor)")
+        print("✅ Background tasks started (stale connection monitor)")
 
     def reset_plot_data(self):
         """Reset all plot data (useful for starting a new set)"""
