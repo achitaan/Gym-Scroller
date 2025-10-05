@@ -17,6 +17,8 @@ interface SocketContextValue {
   latency: number | null;
   isConnected: boolean;
   showDisconnectedWarning: boolean;
+  reconnectAttempts: number;
+  connectionQuality: 'excellent' | 'good' | 'fair' | 'poor' | null;
   subscribeToReps: (callback: (rep: RepEvent) => void) => () => void;
   subscribeToSetUpdates: (callback: (update: SetUpdate) => void) => () => void;
   subscribeToSetEnd: (callback: (end: SetEnd) => void) => () => void;
@@ -52,6 +54,8 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
   const [latency, setLatency] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [showDisconnectedWarning, setShowDisconnectedWarning] = useState(false);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [connectionQuality, setConnectionQuality] = useState<'excellent' | 'good' | 'fair' | 'poor' | null>(null);
 
   // Refs for connection management
   const disconnectTimerRef = useRef<NodeJS.Timeout>();
@@ -83,6 +87,9 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
       setConnected(true);
       setIsConnected(true);
 
+      // Reset reconnection attempt counter on successful connection
+      setReconnectAttempts(0);
+
       // Cancel warning if we reconnect quickly
       if (disconnectTimerRef.current) {
         clearTimeout(disconnectTimerRef.current);
@@ -104,15 +111,18 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
       // Force reconnect if server initiated disconnect or transport closed
       if (reason === 'io server disconnect' || reason === 'transport close') {
         console.log('🔄 [Socket] Forcing reconnection...');
+        // Add jitter to prevent thundering herd
+        const jitter = Math.random() * 1000;
         setTimeout(() => {
           socketInstance.connect();
-        }, 1000); // 1 second delay before manual reconnect
+        }, 1000 + jitter); // 1-2 second delay with jitter
       }
     });
 
     // Reconnection attempt logging
     socketInstance.on('reconnect_attempt', (attemptNumber) => {
       console.log(`🔄 [Socket] Reconnection attempt #${attemptNumber}`);
+      setReconnectAttempts(attemptNumber);
     });
 
     socketInstance.on('reconnect', (attemptNumber) => {
@@ -121,10 +131,11 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
 
     socketInstance.on('reconnect_failed', () => {
       console.error('❌ [Socket] Reconnection failed, retrying...');
-      // Attempt manual reconnect after 2 second delay
+      // Attempt manual reconnect after 2 second delay with jitter
+      const jitter = Math.random() * 1000;
       setTimeout(() => {
         socketInstance.connect();
-      }, 2000);
+      }, 2000 + jitter);
     });
 
     socketInstance.on('reconnect_error', (error) => {
@@ -238,6 +249,17 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
           const roundTripTime = Date.now() - sendTime;
           setLatency(roundTripTime);
           console.log(`💓 [Socket] Heartbeat RTT: ${roundTripTime}ms`);
+
+          // Calculate connection quality based on latency
+          if (roundTripTime < 50) {
+            setConnectionQuality('excellent');
+          } else if (roundTripTime < 150) {
+            setConnectionQuality('good');
+          } else if (roundTripTime < 300) {
+            setConnectionQuality('fair');
+          } else {
+            setConnectionQuality('poor');
+          }
         });
       }
     }, 5000); // Every 5 seconds
@@ -339,6 +361,8 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
     latency,
     isConnected,
     showDisconnectedWarning,
+    reconnectAttempts,
+    connectionQuality,
     subscribeToReps,
     subscribeToSetUpdates,
     subscribeToSetEnd,

@@ -129,26 +129,37 @@ class LiveGateway:
             This ensures NAT mappings stay alive and connection health is verified.
             Heartbeat every 5 seconds keeps routers from timing out connections.
             """
-            if sid in self.connected_clients:
-                # Update last activity time
-                self.connected_clients[sid]["last_chunk_time"] = datetime.now()
-                self.last_pong_times[sid] = datetime.now()
+            # Validate session ID
+            if sid is None or sid not in self.connected_clients:
+                return
 
-                # Echo back with server timestamp for latency calculation
-                await self.sio.emit("heartbeat_ack", {
-                    "client_ts": data.get("timestamp"),
-                    "server_ts": datetime.now().timestamp() * 1000,
-                    "sid": sid
-                }, room=sid)
+            # Update last activity time
+            self.connected_clients[sid]["last_chunk_time"] = datetime.now()
+            self.last_pong_times[sid] = datetime.now()
+
+            # Echo back with server timestamp for latency calculation
+            await self.sio.emit("heartbeat_ack", {
+                "client_ts": data.get("timestamp"),
+                "server_ts": datetime.now().timestamp() * 1000,
+                "sid": sid
+            }, room=sid)
 
         @self.sio.event
         async def startSet(sid, data):
+            # Validate session ID
+            if sid is None or sid not in self.connected_clients:
+                return
+
             print(f"Set started by {sid}: {data}")
             # Reset plot data for new set
             self.reset_plot_data()
 
         @self.sio.event
         async def endSet(sid, data):
+            # Validate session ID
+            if sid is None or sid not in self.connected_clients:
+                return
+
             print(f"Set ended by {sid}: {data}")
             reps = data.get("reps", [])
             # Convert dict reps to RepEvent objects if needed
@@ -177,10 +188,18 @@ class LiveGateway:
         @self.sio.event
         async def sensorData(sid, data):
             """Handle incoming state data from ESP8266 with timeout protection"""
+            # CRITICAL: Validate session ID to prevent "None is connected" errors
+            if sid is None:
+                # Silently drop messages from disconnected clients (race condition)
+                return
+
+            if sid not in self.connected_clients:
+                # Client disconnected but message still in queue - ignore silently
+                return
+
             # Update connection tracking
-            if sid in self.connected_clients:
-                self.connected_clients[sid]["chunks_received"] += 1
-                self.connected_clients[sid]["last_chunk_time"] = datetime.now()
+            self.connected_clients[sid]["chunks_received"] += 1
+            self.connected_clients[sid]["last_chunk_time"] = datetime.now()
 
             try:
                 # Timeout protection: 2 seconds max for processing

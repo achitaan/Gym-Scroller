@@ -296,6 +296,28 @@ void loop() {
     // CRITICAL: Feed watchdog timer to prevent resets during long operations
     ESP.wdtFeed();
 
+    // CRITICAL: Check WiFi connectivity BEFORE attempting WebSocket operations
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[WiFi] ⚠️ Connection lost, attempting reconnection...");
+        wsConnected = false;
+        socketIOConnected = false;
+
+        // Attempt WiFi reconnection
+        WiFi.reconnect();
+        delay(1000);
+        ESP.wdtFeed();
+
+        // Check if reconnection succeeded
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.println("[WiFi] ✅ WiFi reconnected successfully!");
+            Serial.printf("📍 IP Address: %s\n", WiFi.localIP().toString().c_str());
+            Serial.printf("📶 Signal: %d dBm\n", WiFi.RSSI());
+        } else {
+            Serial.println("[WiFi] ❌ Reconnection failed, will retry next loop");
+        }
+        return;  // Skip rest of loop until WiFi is back
+    }
+
     webSocket.loop();  // Handle WebSocket events
 
     // Feed watchdog after socket processing
@@ -340,10 +362,15 @@ void loop() {
     if (now - lastHeapCheck > 10000) {
         lastHeapCheck = now;
         uint32_t freeHeap = ESP.getFreeHeap();
-        Serial.printf("📊 Heap: %u bytes | WiFi: %d | Reps: %d\n", freeHeap,
-                      WiFi.status(), repCount);
+        int32_t rssi = WiFi.RSSI();
+        Serial.printf("📊 Heap: %u bytes | WiFi: %d dBm | WS: %s | Reps: %d\n",
+                      freeHeap, rssi,
+                      socketIOConnected ? "✅" : "❌", repCount);
         if (freeHeap < 10000) {
             Serial.println("⚠️ WARNING: Low heap memory!");
+        }
+        if (rssi < -80) {
+            Serial.println("⚠️ WARNING: Weak WiFi signal, may cause disconnections!");
         }
     }
 
