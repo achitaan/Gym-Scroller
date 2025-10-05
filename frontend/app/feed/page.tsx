@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSocket } from "@/lib/socket-context";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Lock, Unlock, RefreshCw, Video } from "lucide-react";
+import { ArrowLeft, Lock, Unlock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/Navbar";
 import { useYouTubeShorts } from "@/lib/use-youtube-shorts";
@@ -588,26 +588,11 @@ export default function FeedPage() {
 
           <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
             {incomingPreset.exercises.map((ex: any, i: number) => (
-              <div key={i} className="space-y-1 flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{ex.exercise.name}</div>
-                  <div className="text-xs text-neutral-300">
-                    {ex.sets?.length ?? 0} sets • {ex.sets && ex.sets.length > 0 ? `${ex.sets.map((s: any) => (s.weightKg ? `${s.weightKg}kg` : '—')).join(', ')}` : 'No weights'}
-                  </div>
+              <div key={i} className="space-y-1">
+                <div className="text-sm font-medium">{ex.exercise.name}</div>
+                <div className="text-xs text-neutral-300">
+                  {ex.sets?.length ?? 0} sets • {ex.sets && ex.sets.length > 0 ? `${ex.sets.map((s: any) => (s.weightKg ? `${s.weightKg}kg` : '—')).join(', ')}` : 'No weights'}
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Open form video modal or navigate
-                    const exerciseId = ex.exercise.id || ex.exercise.name.toLowerCase().replace(/\s+/g, '-');
-                    router.push(`/form-video/${encodeURIComponent(exerciseId)}?name=${encodeURIComponent(ex.exercise.name)}`);
-                  }}
-                  className="px-2 py-1 rounded bg-blue-600/80 hover:bg-blue-600 text-white text-xs font-medium transition-colors flex items-center gap-1"
-                  title="View form video"
-                >
-                  <Video className="h-3 w-3" />
-                  Form
-                </button>
               </div>
             ))}
           </div>
