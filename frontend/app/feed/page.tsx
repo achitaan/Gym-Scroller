@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useSocket } from "@/lib/socket-context";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Lock, Unlock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { useSearchParams } from 'next/navigation';
 export default function FeedPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { subscribeToSensorData } = useSocket();
   const [incomingPreset, setIncomingPreset] = useState<null | { exercises: Array<{ exercise: any; sets?: Array<{ weightKg?: number }> }> }>(null);
   const [currentReps, setCurrentReps] = useState(0);
   const { videos, loading, error, fetchShort, fetchMultiple } = useYouTubeShorts();
@@ -29,11 +31,35 @@ export default function FeedPage() {
   const touchStartY = useRef(0);
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const isProgrammaticScroll = useRef(false); // Flag to prevent handleScroll interference
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const audioEl = useRef<HTMLAudioElement | null>(null);
   const [musicUrl, setMusicUrl] = useState<string | null>(null);
   const [musicStart, setMusicStart] = useState<number>(0);
   const musicFallbackTriedRef = useRef(false);
+  // Sensor-driven navigation helpers
+  const lastSensorStateRef = useRef<string | null>(null);
+  const nextCooldownUntilRef = useRef<number>(0);
+  const videosLengthRef = useRef<number>(0);
+  // Ad triggering helpers
+  const adCooldownUntilRef = useRef<number>(0);
+  const isAdShowingRef = useRef<boolean>(false);
+  const triggerAdRef = useRef<(() => void) | null>(null);
+  const dismissAdRef = useRef<(() => void) | null>(null);
+  const clearPausedIndexRef = useRef<(() => void) | null>(null);
+  const currentIndexRef = useRef<number>(0);
+  const skippedAdOnConcentricRef = useRef<boolean>(false);
+
+  // Keep a live ref of videos length to avoid stale closures
+  useEffect(() => {
+    videosLengthRef.current = videos.length;
+  }, [videos.length]);
+
+  // isAdShowingRef and triggerAdRef syncing are placed after ad manager and triggerAd are defined
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   // Ad system integration
   const {
@@ -41,6 +67,7 @@ export default function FeedPage() {
     isAdShowing,
     pausedVideoIndex,
     showAd,
+    dismissAd,
     handleAdClick,
     clearPausedIndex,
   } = useAdManager();
@@ -60,10 +87,10 @@ export default function FeedPage() {
       }
 
       const adVideo = await response.json();
-      
+
       console.log("🎯 Ad video fetched:", adVideo);
       console.log(`⏱️ Video duration: ${adVideo.duration} seconds`);
-      
+
       // Optional: You could show this as an overlay or add it to the feed
       // For example, using your existing ad system:
       if (adVideo) {
@@ -82,6 +109,23 @@ export default function FeedPage() {
       console.error("Failed to trigger ad:", error);
     }
   };
+
+  // Sync ad-related refs after definitions
+  useEffect(() => {
+    isAdShowingRef.current = isAdShowing;
+  }, [isAdShowing]);
+
+  useEffect(() => {
+    triggerAdRef.current = triggerAd;
+  }, [triggerAd]);
+
+  useEffect(() => {
+    dismissAdRef.current = dismissAd;
+  }, [dismissAd]);
+
+  useEffect(() => {
+    clearPausedIndexRef.current = clearPausedIndex;
+  }, [clearPausedIndex]);
 
   // Load initial videos on mount
   useEffect(() => {
@@ -123,18 +167,32 @@ export default function FeedPage() {
   useEffect(() => {
     if (containerRef.current && videos.length > 0) {
       const cardHeight = window.innerHeight;
+      isProgrammaticScroll.current = true; // Set flag before scrolling
+
       containerRef.current.scrollTo({
         top: currentIndex * cardHeight,
         behavior: "smooth",
       });
+
+      // Clear flag after scroll animation completes
+      setTimeout(() => {
+        isProgrammaticScroll.current = false;
+      }, 1000); // Allow 1 second for smooth scroll to complete
     }
   }, [currentIndex]);
 
   // Resume video after ad is dismissed
   useEffect(() => {
-    if (!isAdShowing && pausedVideoIndex !== null) {
-      setCurrentIndex(pausedVideoIndex);
-      clearPausedIndex();
+    if (!isAdShowing) {
+      // If we explicitly skipped the ad due to concentric, don't snap to paused index
+      if (skippedAdOnConcentricRef.current) {
+        skippedAdOnConcentricRef.current = false; // one-shot flag
+        return;
+      }
+      if (pausedVideoIndex !== null) {
+        setCurrentIndex(pausedVideoIndex);
+        clearPausedIndex();
+      }
     }
   }, [isAdShowing, pausedVideoIndex, clearPausedIndex]);
 
@@ -145,22 +203,57 @@ export default function FeedPage() {
     }
   }, [currentIndex, videos.length, loading, fetchShort]);
 
-  const handleScroll = () => {
-    if (isRepLocked && !isResting) {
-      // Prevent manual scroll during rep-lock
-      return;
-    }
+  // Subscribe to sensor data and advance on concentric phase
+  useEffect(() => {
+    const unsubscribe = subscribeToSensorData((state: string) => {
+      // Edge detect: trigger only on transition into 'concentric'
+      const prev = lastSensorStateRef.current;
+      lastSensorStateRef.current = state;
 
-    if (containerRef.current) {
-      const scrollTop = containerRef.current.scrollTop;
-      const cardHeight = window.innerHeight;
-      const newIndex = Math.round(scrollTop / cardHeight);
+      const now = Date.now();
 
-      if (newIndex !== currentIndex && newIndex >= 0 && newIndex < videos.length) {
-        setCurrentIndex(newIndex);
+      // Advance on entering concentric
+      if (state === 'concentric' && prev !== 'concentric') {
+        // If an ad is showing, dismiss it immediately (skip timer)
+        if (isAdShowingRef.current) {
+          try {
+            skippedAdOnConcentricRef.current = true;
+            clearPausedIndexRef.current && clearPausedIndexRef.current();
+            dismissAdRef.current && dismissAdRef.current();
+          } catch (e) {
+            console.warn('Failed to skip ad on concentric:', e);
+          }
+        }
+        if (now >= nextCooldownUntilRef.current) {
+          setCurrentIndex((prevIdx) => {
+            const maxIdx = Math.max(0, videosLengthRef.current - 1);
+            const nextIdx = Math.min(prevIdx + 1, maxIdx);
+            if (nextIdx !== prevIdx) {
+              nextCooldownUntilRef.current = now + 800; // small debounce for noisy signals
+            }
+            return nextIdx;
+          });
+        }
       }
-    }
-  };
+
+      // Trigger ad on entering failure (always if none is currently showing)
+      if (state === 'failure' && prev !== 'failure') {
+        if (!isAdShowingRef.current) {
+          try {
+            triggerAdRef.current && triggerAdRef.current();
+          } catch (e) {
+            console.warn('Failed to trigger ad on failure:', e);
+          }
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe && unsubscribe();
+    };
+  }, [subscribeToSensorData]);
+
+  // Scroll handler removed - navigation only via buttons
 
   const goToNext = () => {
     if (currentIndex < videos.length - 1) {
@@ -174,32 +267,7 @@ export default function FeedPage() {
     }
   };
 
-  // Touch support for mobile swipe
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartY.current = e.touches[0].clientY;
-    if (!hasUserInteracted) {
-      setHasUserInteracted(true);
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!hasUserInteracted) {
-      setHasUserInteracted(true);
-    }
-    
-    if (isRepLocked && !isResting) return;
-
-    const touchEndY = e.changedTouches[0].clientY;
-    const diff = touchStartY.current - touchEndY;
-
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) {
-        goToNext();
-      } else {
-        goToPrevious();
-      }
-    }
-  };
+  // Touch/swipe handlers removed - navigation only via buttons
 
   // Send YouTube player API command to the current iframe
   const sendYTCommand = (idx: number, func: string, args: any[] = []) => {
@@ -220,13 +288,13 @@ export default function FeedPage() {
         if (stored === 'true') {
           setAudioUnlocked(true);
         }
-      } catch {}
+      } catch { }
     }
 
     if (audioUnlocked) return;
     const unlock = () => {
       setAudioUnlocked(true);
-      try { localStorage.setItem('audioUnlocked', 'true'); } catch {}
+      try { localStorage.setItem('audioUnlocked', 'true'); } catch { }
     };
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
@@ -263,7 +331,7 @@ export default function FeedPage() {
         } else {
           console.warn('No MP3s found under /public/music');
         }
-      } catch {}
+      } catch { }
     };
     const onLoaded = async () => {
       try {
@@ -387,18 +455,18 @@ export default function FeedPage() {
 
       {/* Incoming preset summary (special instance) */}
       {incomingPreset && (
-  <div className="fixed top-16 left-4 z-50 p-3 rounded-lg bg-white/6 backdrop-blur-md text-neutral-100 w-80 max-w-[calc(50vw-2rem)]">
+        <div className="fixed top-16 left-4 z-50 p-3 rounded-lg bg-white/6 backdrop-blur-md text-neutral-100 w-80 max-w-[calc(50vw-2rem)]">
           <div className="flex items-center justify-between mb-2">
             <div className="font-medium">Starting Workout</div>
             <div className="text-sm text-neutral-300">{incomingPreset.exercises.length} exercises</div>
           </div>
-          
+
           {/* Rep Counter */}
           <div className="mb-3 p-2 rounded bg-white/10 text-center">
             <div className="text-2xl font-bold tabular-nums">{currentReps}</div>
             <div className="text-xs text-neutral-300">Reps</div>
           </div>
-          
+
           <div className="space-y-2 max-h-32 overflow-y-auto mb-3">
             {incomingPreset.exercises.map((ex: any, i: number) => (
               <div key={i} className="space-y-1">
@@ -409,7 +477,7 @@ export default function FeedPage() {
               </div>
             ))}
           </div>
-          
+
           {/* End Workout Button */}
           <button
             onClick={() => {
@@ -430,11 +498,11 @@ export default function FeedPage() {
                   totalReps: currentReps,
                   duration: null, // Can add duration tracking later
                 };
-                
+
                 // Encode summary data
                 const payload = JSON.stringify(summaryData);
                 const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
-                
+
                 // Navigate to workout summary
                 router.push(`/workout-summary?data=${encodeURIComponent(b64)}`);
               } catch (e) {
@@ -449,17 +517,10 @@ export default function FeedPage() {
         </div>
       )}
 
-      {/* Shorts scroll container */}
+      {/* Shorts container - no scroll, navigation via buttons only */}
       <div
         ref={containerRef}
-        onScroll={handleScroll}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className="h-screen overflow-y-scroll snap-y snap-mandatory no-scrollbar"
-        style={{
-          scrollSnapType: "y mandatory",
-          overflowY: isRepLocked && !isResting ? "hidden" : "scroll",
-        }}
+        className="h-screen overflow-hidden"
       >
         {videos.map((video, index) => (
           <div
@@ -474,7 +535,7 @@ export default function FeedPage() {
                 ref={(el) => {
                   iframeRefs.current[index] = el;
                 }}
-                src={index === currentIndex 
+                src={index === currentIndex
                   ? `${video.embedUrl}?autoplay=1&mute=${audioUnlocked ? 0 : 1}&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
                   : `${video.embedUrl}?autoplay=0&mute=1&controls=1&modestbranding=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(origin)}`
                 }
@@ -482,16 +543,16 @@ export default function FeedPage() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
-              
+
               {/* Click to play overlay for first interaction */}
               {!hasUserInteracted && index === currentIndex && (
-                <div 
+                <div
                   className="absolute inset-0 bg-black/30 flex items-center justify-center cursor-pointer z-10"
                   onClick={() => setHasUserInteracted(true)}
                 >
                   <div className="bg-white/20 backdrop-blur-sm rounded-full p-4">
                     <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z"/>
+                      <path d="M8 5v14l11-7z" />
                     </svg>
                   </div>
                 </div>
@@ -547,22 +608,13 @@ export default function FeedPage() {
 
       {/* Debug controls removed (was a full-width bar in dev) */}
 
-      {/* Debug controls (development only) */}
-      {process.env.NODE_ENV === 'development' && (
-        <button
-          onClick={triggerAd}
-          disabled={loading}
-          className="fixed bottom-24 right-4 z-50 py-2 px-3 rounded-lg backdrop-blur-md bg-green-600/90 text-white text-xs font-medium disabled:opacity-50"
-        >
-          {loading ? "..." : "🎯"}
-        </button>
-      )}
+      {/* Dev ad trigger removed per request */}
 
       {/* Bottom Navigation */}
-  <Navbar />
+      <Navbar />
 
-  {/* Hidden audio element for workout music (no UI) */}
-  <audio ref={audioEl} autoPlay playsInline preload="auto" style={{ display: 'none' }} />
+      {/* Hidden audio element for workout music (no UI) */}
+      <audio ref={audioEl} autoPlay playsInline preload="auto" style={{ display: 'none' }} />
 
       {/* Ad Overlay */}
       {isAdShowing && currentAd && (

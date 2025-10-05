@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { useSocket } from "@/lib/socket-context";
 
 interface Video {
   id: string;
@@ -12,6 +13,7 @@ interface Video {
 }
 
 export default function ShortsPage() {
+  const { subscribeToSensorData } = useSocket();
   const [videos, setVideos] = useState<Video[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -21,14 +23,14 @@ export default function ShortsPage() {
   // Fetch a random video
   const fetchRandomVideo = async () => {
     if (isLoadingRef.current) return;
-    
+
     isLoadingRef.current = true;
     setLoading(true);
-    
+
     try {
       const res = await fetch("/api/youtube", { cache: "no-store" });
       const text = await res.text();
-      
+
       let data: any;
       try {
         data = JSON.parse(text);
@@ -55,6 +57,18 @@ export default function ShortsPage() {
   useEffect(() => {
     fetchRandomVideo();
   }, []);
+
+  // Subscribe to sensor data - advance on concentric phase
+  useEffect(() => {
+    const unsubscribe = subscribeToSensorData((state: string) => {
+      if (state === 'concentric') {
+        console.log('🏋️ Concentric detected - advancing to next video');
+        goToNext();
+      }
+    });
+
+    return () => unsubscribe();
+  }, [currentIndex, videos.length, loading]); // Include dependencies for goToNext closure
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -110,7 +124,7 @@ export default function ShortsPage() {
   const handleTouchEnd = (e: React.TouchEvent) => {
     const touchEndY = e.changedTouches[0].clientY;
     const diff = touchStartY.current - touchEndY;
-    
+
     if (Math.abs(diff) > 50) { // Minimum swipe distance
       if (diff > 0) {
         goToNext();
@@ -121,7 +135,7 @@ export default function ShortsPage() {
   };
 
   return (
-    <div 
+    <div
       className="h-screen w-full overflow-hidden bg-black relative"
       ref={containerRef}
       onTouchStart={handleTouchStart}
@@ -140,7 +154,7 @@ export default function ShortsPage() {
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
-            
+
             {/* Video info overlay */}
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
               <h2 className="text-lg font-semibold mb-1 line-clamp-2">{video.title}</h2>
