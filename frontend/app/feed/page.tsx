@@ -10,6 +10,7 @@ import { useYouTubeShorts } from "@/lib/use-youtube-shorts";
 import { useAdManager } from "@/lib/use-ad-manager";
 import { AdOverlay } from "@/components/AdOverlay";
 import { useSearchParams } from 'next/navigation';
+import { ALIGN_CANDIDATES, DEFAULT_ALIGN } from '@/lib/music-align';
 
 /**
  * Feed Page - YouTube Shorts during rest periods
@@ -19,7 +20,7 @@ import { useSearchParams } from 'next/navigation';
 export default function FeedPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { subscribeToSensorData } = useSocket();
+  const { subscribeToSensorData, subscribeToReps } = useSocket();
   const [incomingPreset, setIncomingPreset] = useState<null | { exercises: Array<{ exercise: any; sets?: Array<{ weightKg?: number }> }> }>(null);
   const [currentReps, setCurrentReps] = useState(0);
   const { videos, loading, error, fetchShort, fetchMultiple } = useYouTubeShorts();
@@ -34,9 +35,19 @@ export default function FeedPage() {
   const isProgrammaticScroll = useRef(false); // Flag to prevent handleScroll interference
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const audioEl = useRef<HTMLAudioElement | null>(null);
+  const alignPreloadEl = useRef<HTMLAudioElement | null>(null);
   const [musicUrl, setMusicUrl] = useState<string | null>(null);
   const [musicStart, setMusicStart] = useState<number>(0);
   const musicFallbackTriedRef = useRef(false);
+  // Rep-10 alignment state
+  const setStartTimeRef = useRef<number | null>(null);
+  const firstValidRepTsRef = useRef<number | null>(null);
+  const repCountRef = useRef<number>(0);
+  const concentricSamplesRef = useRef<number[]>([]); // ms per rep (approx)
+  const predictedRep10AtRef = useRef<number | null>(null); // epoch ms when we expect rep 10
+  const alignTargetRef = useRef<{ file: string; target: number } | null>(null);
+  const switchScheduledRef = useRef<boolean>(false);
+  const switchTimeoutIdRef = useRef<number | null>(null);
   // Sensor-driven navigation helpers
   const lastSensorStateRef = useRef<string | null>(null);
   const nextCooldownUntilRef = useRef<number>(0);
@@ -157,6 +168,29 @@ export default function FeedPage() {
           const defaultUrl = '/music/10-minutes-relax-and-study-with-me.mp3';
           setMusicUrl(defaultUrl);
         }
+
+        // Parse optional alignment params: alignSong=<filename>, alignAt=<seconds|mm:ss>
+        const alignSong = searchParams.get('alignSong');
+        const alignAtParam = searchParams.get('alignAt');
+        let alignAtSeconds: number | null = null;
+        if (alignAtParam) {
+          if (alignAtParam.includes(':')) {
+            const parts = alignAtParam.split(':').map((n) => parseInt(n, 10));
+            if (parts.length === 2 && parts.every((n) => !isNaN(n))) {
+              alignAtSeconds = parts[0] * 60 + parts[1];
+            }
+          } else {
+            const n = parseInt(alignAtParam, 10);
+            if (!isNaN(n)) alignAtSeconds = n;
+          }
+        }
+        if (alignSong || alignAtSeconds !== null) {
+          const candidate = ALIGN_CANDIDATES.find((c) => c.file === alignSong) || DEFAULT_ALIGN;
+          const target = alignAtSeconds ?? candidate.target;
+          alignTargetRef.current = { file: candidate.file, target };
+        } else {
+          alignTargetRef.current = null;
+        }
       }
     } catch (e) {
       console.warn('Failed to decode preset', e);
@@ -195,6 +229,91 @@ export default function FeedPage() {
       }
     }
   }, [isAdShowing, pausedVideoIndex, clearPausedIndex]);
+
+  // Subscribe to rep events to estimate rep-10 timing
+  useEffect(() => {
+    const unsubscribe = subscribeToReps((rep) => {
+      if (rep.valid) setCurrentReps((n) => n + 1);
+      // When first rep comes in, mark set start and reset estimates
+      if (setStartTimeRef.current == null) {
+        setStartTimeRef.current = Date.now();
+      }
+      if (!rep.valid) return;
+      repCountRef.current += 1;
+      if (firstValidRepTsRef.current == null) {
+        firstValidRepTsRef.current = rep.ts;
+      }
+      // Use metrics.tut as a proxy for rep duration if available; else fallback to delta now - last rep ts
+      // Here we take concentric estimate as half of TUT if concentric is explosive; approximation is fine for alignment
+      const concentricMs = Math.max(200, Math.min(4000, Math.round(rep.metrics.tut * 0.5 || 1000)));
+      concentricSamplesRef.current.push(concentricMs);
+
+      // After first 3 valid reps, compute a prediction for when rep 10 ends
+      if (concentricSamplesRef.current.length >= 3 && !switchScheduledRef.current) {
+        const avgConcentric = Math.round(
+          concentricSamplesRef.current.slice(0, 3).reduce((a, b) => a + b, 0) / 3
+        );
+        const repsRemaining = Math.max(0, 10 - repCountRef.current);
+        const predictedMsUntil10 = repsRemaining * avgConcentric;
+        const predictedAt = Date.now() + predictedMsUntil10;
+        predictedRep10AtRef.current = predictedAt;
+
+        // If we have an alignment target and audio is unlocked, prepare and schedule switch
+        if (alignTargetRef.current && audioEl.current && audioUnlocked) {
+          // Preload target song silently in a hidden element so switch is instant
+          if (!alignPreloadEl.current) {
+            alignPreloadEl.current = new Audio();
+            alignPreloadEl.current.preload = 'auto';
+            alignPreloadEl.current.crossOrigin = 'anonymous';
+          }
+          const preload = alignPreloadEl.current;
+          // Use encodeURIComponent so special characters in filenames are safe in URLs
+          preload.src = `/music/${encodeURIComponent(alignTargetRef.current.file)}`;
+          // Compute the seek position at switch time so that song time == target
+          // At switch timestamp T, we want songCurrentTime(T) = target => seek to target when starting
+          // For robustness, we simply set currentTime at switch; no need to start preload playback yet
+          const delay = Math.max(0, predictedAt - Date.now());
+          // Schedule the switch
+          if (switchTimeoutIdRef.current) window.clearTimeout(switchTimeoutIdRef.current);
+          const id = window.setTimeout(() => {
+            try {
+              const el = audioEl.current!;
+              el.pause();
+              el.src = preload.src;
+              const seek = Math.max(0, alignTargetRef.current!.target);
+              const onMeta = async () => {
+                try {
+                  el.currentTime = seek;
+                  await el.play();
+                } catch {}
+              };
+              el.addEventListener('loadedmetadata', onMeta, { once: true });
+              if (el.readyState >= 1) {
+                // If metadata is already available, set immediately
+                onMeta();
+              }
+            } finally {
+              switchScheduledRef.current = true;
+            }
+          }, delay);
+          switchTimeoutIdRef.current = id as unknown as number;
+        }
+      }
+    });
+    return () => {
+      unsubscribe && unsubscribe();
+      // Reset alignment state when leaving feed
+      if (switchTimeoutIdRef.current) window.clearTimeout(switchTimeoutIdRef.current);
+      setStartTimeRef.current = null;
+      firstValidRepTsRef.current = null;
+      repCountRef.current = 0;
+      concentricSamplesRef.current = [];
+      predictedRep10AtRef.current = null;
+      alignTargetRef.current = null;
+      switchScheduledRef.current = false;
+      switchTimeoutIdRef.current = null;
+    };
+  }, [subscribeToReps, audioUnlocked]);
 
   // Preload next video when approaching the end
   useEffect(() => {
