@@ -61,6 +61,9 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
       autoConnect: true,
       forceNew: false,
       multiplex: true,
+      upgrade: false,                        // Prevent polling fallback issues
+      rememberUpgrade: true,                 // Remember successful upgrades
+      path: '/socket.io/',                   // Explicit path for socket.io endpoint
     });
 
     socketInstance.on('connect', () => {
@@ -69,13 +72,15 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
     });
 
     socketInstance.on('disconnect', (reason) => {
-      console.log('🔴 [Socket] Disconnected:', reason);
+      console.log(`🔴 [Socket] Disconnected: ${reason}`);
       setConnected(false);
 
-      // Force reconnect if server initiated disconnect
-      if (reason === 'io server disconnect') {
-        console.log('🔄 [Socket] Server disconnected us - reconnecting manually');
-        socketInstance.connect();
+      // Force reconnect if server initiated disconnect or transport closed
+      if (reason === 'io server disconnect' || reason === 'transport close') {
+        console.log('🔄 [Socket] Forcing reconnection...');
+        setTimeout(() => {
+          socketInstance.connect();
+        }, 1000); // 1 second delay before manual reconnect
       }
     });
 
@@ -89,7 +94,11 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
     });
 
     socketInstance.on('reconnect_failed', () => {
-      console.error('❌ [Socket] Reconnection failed - will keep trying');
+      console.error('❌ [Socket] Reconnection failed, retrying...');
+      // Attempt manual reconnect after 2 second delay
+      setTimeout(() => {
+        socketInstance.connect();
+      }, 2000);
     });
 
     socketInstance.on('reconnect_error', (error) => {
@@ -103,6 +112,11 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
 
     socketInstance.on('connect_timeout', () => {
       console.error('⏱️ [Socket] Connection timeout');
+    });
+
+    // General error handler
+    socketInstance.on('error', (error) => {
+      console.error('❌ [Socket] Error:', error);
     });
 
     // Ping/Pong for connection health monitoring
