@@ -3,15 +3,17 @@ import signal
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional, Any
 import socketio
 from dotenv import load_dotenv
 import uvicorn
 
-from live_gateway import LiveGateway
+#from live_gateway import LiveGateway
 from calculation_service import CalculationService
 from shorts_api import ShortsAPI
+from video_generation_service import video_service
 
 # Load environment variables
 load_dotenv()
@@ -33,30 +35,30 @@ sio = socketio.AsyncServer(
 # Services (initialized after app creation)
 calculation_service = None
 shorts_api = None
-live_gateway = None
+#live_gateway = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle manager for startup and shutdown events"""
-    global calculation_service, shorts_api, live_gateway
+    global calculation_service, shorts_api#, live_gateway
 
     # Startup
     calculation_service = CalculationService()
     shorts_api = ShortsAPI()
-    live_gateway = LiveGateway(sio, calculation_service)
+    #live_gateway = LiveGateway(sio, calculation_service)
 
     # Start background tasks (mock events for demo)
-    live_gateway.start_background_tasks()
+    #live_gateway.start_background_tasks()
 
-    print("🚀 Server running")
-    print("📊 WebSocket gateway ready")
-    print("🎬 Shorts curation service ready")
+    print("Server running")
+    print("WebSocket gateway ready")
+    print("Shorts curation service ready")
 
     yield
 
     # Shutdown
-    await live_gateway.cleanup()
+    #await live_gateway.cleanup()
     print("Server shutdown complete")
 
 
@@ -76,6 +78,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve cached/generated videos
+app.mount("/cache", StaticFiles(directory="./video_cache"), name="cache")
 
 # Create Socket.IO ASGI app
 socket_app = socketio.ASGIApp(sio, app)
@@ -98,6 +103,21 @@ class AIPlanRequest(BaseModel):
     currentStats: dict
     goals: dict
     weeks: int
+
+
+class ExerciseVideoRequest(BaseModel):
+    id: str
+    name: str
+    muscleGroups: List[str]
+    equipment: str
+    category: str
+    description: Optional[str] = None
+
+
+class VideoGenerationRequest(BaseModel):
+    exercise: ExerciseVideoRequest
+    variation: Optional[str] = "standard"
+    duration: Optional[int] = 8
 
 
 # REST API endpoints
@@ -161,6 +181,68 @@ async def ai_plan(request: AIPlanRequest):
     }
 
 
+@app.post("/api/form-videos/generate")
+async def generate_form_video(request: VideoGenerationRequest):
+    """Generate form instruction video for an exercise"""
+    try:
+        exercise_data = {
+            "id": request.exercise.id,
+            "name": request.exercise.name,
+            "muscleGroups": request.exercise.muscleGroups,
+            "equipment": request.exercise.equipment,
+            "category": request.exercise.category
+        }
+        
+        result = await video_service.generate_video(
+            exercise_data,
+            variation=request.variation,
+            duration=request.duration
+        )
+        
+        return {
+            "success": True,
+            "video": result
+        }
+    except Exception as e:
+        print(f"Error generating form video: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate form video: {str(e)}")
+
+
+@app.get("/api/form-videos/{exercise_id}")
+async def get_form_video(exercise_id: str):
+    """Get cached form video for an exercise"""
+    try:
+        video = video_service.get_video_by_exercise(exercise_id)
+        
+        if video:
+            return {
+                "success": True,
+                "video": video,
+                "cached": True
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Form video not found")
+    except Exception as e:
+        print(f"Error fetching form video: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch form video: {str(e)}")
+
+
+@app.get("/api/form-videos/status/{video_id}")
+async def get_video_status(video_id: str):
+    """Check the status of a video generation job"""
+    try:
+        # For now, just return a simple status
+        # In a real implementation, you'd check the actual job status
+        return {
+            "success": True,
+            "video_id": video_id,
+            "status": "completed"
+        }
+    except Exception as e:
+        print(f"Error checking video status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check video status: {str(e)}")
+
+
 # Graceful shutdown handler
 def shutdown_handler(signum, frame):
     print("SIGTERM received, closing server...")
@@ -184,18 +266,18 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))  # Changed default port to 8000
 
     print("\n" + "=" * 50)
-    print("🚀 Gym Scroller Backend Starting...")
+    print("Gym Scroller Backend Starting...")
     print("=" * 50)
-    print(f"📍 Local access:   http://127.0.0.1:{port}")
-    print(f"🌐 Network access: http://{local_ip}:{port}")
-    print(f"🔌 ESP8266 should connect to: {local_ip}:{port}")
-    print(f"💻 Frontend should use: http://{local_ip}:{port}")
+    print(f"Local access:   http://127.0.0.1:{port}")
+    print(f"Network access: http://{local_ip}:{port}")
+    print(f"ESP8266 should connect to: {local_ip}:{port}")
+    print(f"Frontend should use: http://{local_ip}:{port}")
     print("=" * 50 + "\n")
 
     uvicorn.run(
         "main:socket_app",
-        host="0.0.0.0",  # Listen on all network interfaces (allows ESP8266 + Frontend connections)
-        port=port,
+        host="::",  # Listen on both IPv6 (::) and IPv4 (dual-stack) so ::1 works
+        port=3000,  # Force port 8000
         reload=True,
         log_level="info",
     )

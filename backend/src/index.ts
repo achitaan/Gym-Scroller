@@ -6,8 +6,15 @@ import dotenv from 'dotenv';
 import { LiveGateway } from './services/live-gateway';
 import { CalculationService } from './services/calculation-service';
 import { ShortsAPI } from './services/shorts-api';
+import formVideoRoutes from './services/form-video-routes';
 
 dotenv.config();
+
+// Debug API key loading
+console.log('🔑 API Key Debug:');
+console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'SET' : 'NOT SET');
+console.log('GOOGLE_API_KEY:', process.env.GOOGLE_API_KEY ? 'SET' : 'NOT SET');
+console.log('VEO2_API_KEY:', process.env.VEO2_API_KEY ? 'SET' : 'NOT SET');
 
 const app = express();
 const httpServer = createServer(app);
@@ -21,6 +28,9 @@ const io = new Server(httpServer, {
 // Middleware
 app.use(cors());
 app.use(express.json());
+// Serve cached/generated videos
+import path from 'path';
+app.use('/cache', express.static(path.resolve('./video_cache')));
 
 // Services
 const calculationService = new CalculationService();
@@ -31,6 +41,8 @@ const liveGateway = new LiveGateway(io, calculationService);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
+
+// Form video routes (removed duplicate - using /api/form-videos below)
 
 app.get('/api/shorts/queue', async (req, res) => {
   try {
@@ -80,6 +92,9 @@ app.post('/api/ai/plan', (req, res) => {
     plan: [],
   });
 });
+
+// Form video generation routes
+app.use('/api/form-videos', formVideoRoutes);
 
 // Start server
 const PORT = process.env.PORT || 3001;

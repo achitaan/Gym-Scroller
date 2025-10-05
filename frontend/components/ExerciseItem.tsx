@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Exercise, Set } from "@/lib/hevy-types";
 import {
   Accordion,
@@ -10,7 +11,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Dumbbell } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dumbbell, Video, X } from "lucide-react";
+import { ExerciseFormVideo } from "./ExerciseFormVideo";
 
 interface ExerciseItemProps {
   exercise: Exercise;
@@ -21,33 +24,88 @@ interface ExerciseItemProps {
  * ExerciseItem displays an exercise with expandable set inputs
  * Hevy UX pattern: Accordion-based expandable lists for clean, scannable workout views
  * Each set has inline editable fields for reps, weight, and completion tracking
+ * Enhanced with AI form video generation for proper exercise technique
  */
 export function ExerciseItem({ exercise, onSetUpdate }: ExerciseItemProps) {
   const completedSets = exercise.sets.filter(s => s.completed).length;
+  const [showFormVideo, setShowFormVideo] = useState(false);
 
   return (
-    <Accordion type="single" collapsible className="w-full">
-      <AccordionItem value={exercise.id} className="border-neutral-200 dark:border-neutral-800">
-        <AccordionTrigger className="hover:no-underline">
-          <div className="flex items-center justify-between w-full pr-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-800">
-                <Dumbbell className="h-4 w-4 text-neutral-900 dark:text-white" />
-              </div>
-              <div className="text-left">
-                <h3 className="font-semibold">{exercise.name}</h3>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  {completedSets}/{exercise.sets.length} sets
-                </p>
-              </div>
-            </div>
-            <Badge variant="outline" className="capitalize">
-              {exercise.category}
-            </Badge>
+    <div className="w-full">
+      {/* Always visible header with form video button */}
+      <div className="flex items-center justify-between p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-800">
+            <Dumbbell className="h-4 w-4 text-neutral-900 dark:text-white" />
           </div>
-        </AccordionTrigger>
+          <div className="text-left">
+            <h3 className="font-semibold text-lg">{exercise.name}</h3>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              {completedSets}/{exercise.sets.length} sets
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="capitalize">
+            {exercise.category}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowFormVideo(!showFormVideo);
+            }}
+            className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 font-medium"
+            title={showFormVideo ? "Close form video" : "Show form video"}
+          >
+            {showFormVideo ? (
+              <>
+                <X className="h-4 w-4 mr-1" />
+                Close
+              </>
+            ) : (
+              <>
+                <Video className="h-4 w-4 mr-1" />
+                Form Video
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Form Video Section */}
+      {showFormVideo && (
+        <div className="mb-4 p-4 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg">
+          <ExerciseFormVideo
+            exerciseName={exercise.name}
+            exerciseId={exercise.id}
+            onClose={() => setShowFormVideo(false)}
+          />
+        </div>
+      )}
+
+      {/* Collapsible Exercise Details */}
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value={exercise.id} className="border-neutral-200 dark:border-neutral-800">
+          <AccordionTrigger className="hover:no-underline bg-white dark:bg-neutral-900 px-4 py-3 rounded-lg">
+            <div className="flex items-center justify-between w-full">
+              <span className="text-sm font-medium">Exercise Details</span>
+            </div>
+          </AccordionTrigger>
         <AccordionContent>
-          <div className="space-y-3 pt-2">
+          <div className="space-y-4 pt-2">
+            {/* Form Video Section */}
+            {showFormVideo && (
+              <div className="px-4">
+                <ExerciseFormVideo
+                  exerciseName={exercise.name}
+                  exerciseId={exercise.id}
+                  onClose={() => setShowFormVideo(false)}
+                />
+              </div>
+            )}
+
             {/* Set headers */}
             <div className="grid grid-cols-[50px_1fr_1fr_40px] gap-2 px-4 text-xs font-medium text-neutral-500 dark:text-neutral-400">
               <div>SET</div>
@@ -96,5 +154,6 @@ export function ExerciseItem({ exercise, onSetUpdate }: ExerciseItemProps) {
         </AccordionContent>
       </AccordionItem>
     </Accordion>
+    </div>
   );
 }

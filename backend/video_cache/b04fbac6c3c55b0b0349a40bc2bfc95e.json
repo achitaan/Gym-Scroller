@@ -1,0 +1,16 @@
+{
+  "video_id": "b04fbac6c3c55b0b0349a40bc2bfc95e",
+  "video_url": "http://localhost:3000/cache/veo_b04fbac6c3c55b0b0349a40bc2bfc95e.mp4",
+  "thumbnail_url": null,
+  "status": "completed",
+  "exercise": "Bench Press",
+  "duration": 8,
+  "generated_at": "2025-10-05T10:15:07.416016",
+  "prompt": "Create a crisp, professional instructional video that teaches proper form for Bench Press.\n\nGOAL\n- Show the full RANGE OF MOTION with smooth, controlled tempo.\n- Always maintain context from both FRONT and SIDE views.\n- Overlay a thin RED PATH LINE that traces the main moving implement/joint across the entire rep.\n\nSCENE & TALENT\n- Professional gym; uncluttered background; good lighting with soft shadows.\n- Fit athletic demonstrator in neutral, non-branded attire (no logos).\n- Camera distance: waist-up to full body as needed; avoid extreme closeups.\n\nDURATION & RHYTHM (\u22488s total)\n- 0\u20131s: Front angle static frame. Title card (small, bottom-left): \"Bench Press\".\n- 1\u20136s: Execute 1\u20132 controlled reps (2\u20133s per rep). Keep full ROM clearly visible. Red path line tracks the moving part continuously.\n- 6\u20138s: Cut to side angle for the final rep phase + lockout; hold 0.5s on end position.\n\nCAMERA\n- Multi-angle coverage: ~70% front, ~30% side.\n- Static tripod look; no whip pans, no aggressive zooms, no fisheye.\n- Framing ensures joints and implement are never cropped during ROM.\n\nLIGHTING & LOOK\n- Bright, even, professional gym lighting; high contrast between subject and background.\n- Clean, modern aesthetic; colors natural and accurate.\n\nON-SCREEN GUIDES (subtle)\n- Thin RED PATH LINE follows the target segment/implement throughout the rep.\n- Optional minimalist callouts (small text, bottom-right) at key moments: \"Start\", \"Midpoint\", \"Lockout\".\n\nKEY FORM POINTS TO VISUALIZE\n- Starting position: neutral spine, braced posture, setup shown clearly.\n- Execution: controlled concentric and eccentric; no bouncing; consistent tempo.\n- Full range of motion: show bottom and top endpoints clearly.\n- Breathing: subtle cue (inhale on lowering, exhale on exertion), no exaggerated audio.\n- Common mistakes: briefly hint visually (do NOT perform them) via quick text labels like \"Don\u2019t round back\", \"Avoid knees caving\".\n\nTECH SPECS\n- QUALITY: 1080p, 30fps, sharp focus.\n- AUDIO: Gym ambience minimal; no loud music; focus on clarity of movement.\n- COLOR: Natural skin tones; no heavy filters or color casts.\n\nMETADATA\n- MUSCLE FOCUS: chest, triceps, shoulders\n- EQUIPMENT: barbell\n- CATEGORY: chest\n- STYLE: Cinematic, professional fitness instruction\n- NEGATIVE: No shaky cam, no lens distortion, no clutter, no text blocks covering joints, no overexposed highlights.\n\nOUTPUT\n- A single ~8-second clip that clearly shows controlled movement and FULL ROM from front and side, with a thin red line tracing the motion path throughout.",
+  "metadata": {
+    "variation": "standard",
+    "model": "veo-3.0-generate-001",
+    "video_path": "./video_cache\\veo_b04fbac6c3c55b0b0349a40bc2bfc95e.mp4",
+    "real_generation": true
+  }
+}
