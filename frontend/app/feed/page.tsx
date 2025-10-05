@@ -253,17 +253,9 @@ export default function FeedPage() {
   // Subscribe to rep events to estimate rep-10 timing
   useEffect(() => {
     const unsubscribe = subscribeToReps((rep) => {
-      if (rep.valid) setCurrentReps((n) => n + 1);
-      if (rep.valid) {
-        setSetReps((prev) => {
-          const ei = currentExerciseIdxRef.current;
-          const si = currentSetIdxRef.current;
-          if (!prev[ei] || typeof prev[ei][si] !== 'number') return prev;
-          const next = prev.map((row) => row.slice());
-          next[ei][si] += 1;
-          return next;
-        });
-      }
+      // Note: rep counting now happens in sensor data handler on concentric
+      // This handler only tracks timing for music alignment
+
       // When first rep comes in, mark set start and reset estimates
       if (setStartTimeRef.current == null) {
         setStartTimeRef.current = Date.now();
@@ -315,7 +307,7 @@ export default function FeedPage() {
                 try {
                   el.currentTime = seek;
                   await el.play();
-                } catch {}
+                } catch { }
               };
               el.addEventListener('loadedmetadata', onMeta, { once: true });
               if (el.readyState >= 1) {
@@ -422,7 +414,7 @@ export default function FeedPage() {
           }),
         };
         addWorkout(workout);
-      } catch {}
+      } catch { }
       const payload = JSON.stringify(summaryData);
       const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
       router.push(`/workout-summary?data=${encodeURIComponent(b64)}`);
@@ -449,6 +441,19 @@ export default function FeedPage() {
 
       // Advance on entering concentric
       if (state === 'concentric' && prev !== 'concentric') {
+        // Increment rep counter
+        setCurrentReps((prevReps) => prevReps + 1);
+
+        // Update set-specific rep tracking
+        setSetReps((prev) => {
+          const ei = currentExerciseIdxRef.current;
+          const si = currentSetIdxRef.current;
+          if (!prev[ei] || typeof prev[ei][si] !== 'number') return prev;
+          const next = prev.map((row) => row.slice());
+          next[ei][si] += 1;
+          return next;
+        });
+
         // If an ad is showing, dismiss it immediately (skip timer)
         if (isAdShowingRef.current) {
           try {
