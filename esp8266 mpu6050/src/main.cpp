@@ -74,7 +74,7 @@ const char* phaseNames[] = {"WAITING", "CONCENTRIC", "ECCENTRIC"};
 
 RepPhase currentPhase = WAITING;
 RepPhase lastPhase = WAITING;  // Track previous phase to detect changes
-float lastGyroZ = 0.0;
+float lastGyroX = 0.0;
 bool concentricIsPositive = true;  // Set on first significant movement
 int repCount = 0;
 const float DIRECTION_THRESHOLD =
@@ -91,6 +91,7 @@ const float FAILURE_THRESHOLD_MULTIPLIER = 1.5;  // 2x median = failure
 bool failureDetected = false;
 bool lastFailureState =
     false;  // Track previous failure state to detect changes
+static unsigned long stallStart = 0;
 
 // Helper function to calculate median
 float calculateMedian(unsigned long* values, int count) {
@@ -391,14 +392,14 @@ void loop() {
     // DIRECTION-CHANGE REP DETECTION (Using Gyroscope)
     // ========================================================================
 
-    float currentGyroZ = g.gyro.x;  // Angular velocity on Z-axis (rad/s)
+    float currentGyroX = g.gyro.x;  // Angle on X-axis
 
     // State machine logic
     if (currentPhase == WAITING) {
         // Wait for first significant rotation - establishes concentric
         // direction
-        if (abs(currentGyroZ) > DIRECTION_THRESHOLD) {
-            concentricIsPositive = (currentGyroZ > 0);
+        if (abs(currentGyroX) > DIRECTION_THRESHOLD) {
+            concentricIsPositive = (currentGyroX > 0);
             currentPhase = CONCENTRIC;
             concentricStartTime = millis();  // Start timing concentric phase
             failureDetected = false;         // Reset failure flag
@@ -410,24 +411,43 @@ void loop() {
         // Check for failure: concentric taking too long
         unsigned long concentricElapsed = millis() - concentricStartTime;
 
-        if (durationsRecorded >= 3 && medianConcentricDuration > 0) {
-            if (concentricElapsed >
-                medianConcentricDuration * FAILURE_THRESHOLD_MULTIPLIER) {
+        // if (durationsRecorded >= 3 && medianConcentricDuration > 0) {
+        //     if (concentricElapsed >
+        //         medianConcentricDuration * FAILURE_THRESHOLD_MULTIPLIER) {
+        //         if (!failureDetected) {
+        //             failureDetected = true;
+        //             Serial.print("⚠️  FAILURE DETECTED - Concentric phase ");
+        //             Serial.print(concentricElapsed);
+        //             Serial.print("ms (");
+        //             Serial.print(concentricElapsed / medianConcentricDuration);
+        //             Serial.println("x median)");
+        //         }
+        //     }
+        // }
+
+        float absGyro = abs(currentGyroX);
+
+        if (absGyro < 0.3) { // threshold: near-zero angular velocity
+            // If stalled for more than 300ms -> struggling
+            static unsigned long stallStart = 0;
+
+            if (stallStart == 0) {
+                stallStart = millis(); // start stall timer
+            } else if (millis() - stallStart > 300) {
                 if (!failureDetected) {
                     failureDetected = true;
-                    Serial.print("⚠️  FAILURE DETECTED - Concentric phase ");
-                    Serial.print(concentricElapsed);
-                    Serial.print("ms (");
-                    Serial.print(concentricElapsed / medianConcentricDuration);
-                    Serial.println("x median)");
+                    Serial.println("⚠️ MID-REP STRUGGLE DETECTED!");
                 }
             }
+        } else {
+            // Reset stall timer when moving normally again
+            stallStart = 0;
         }
 
         // Check for direction reversal to eccentric phase
         bool reversedDirection = concentricIsPositive
-                                     ? (currentGyroZ < -DIRECTION_THRESHOLD)
-                                     : (currentGyroZ > DIRECTION_THRESHOLD);
+                                     ? (currentGyroX < -DIRECTION_THRESHOLD)
+                                     : (currentGyroX > DIRECTION_THRESHOLD);
 
         if (reversedDirection) {
             // Record concentric duration
@@ -454,8 +474,8 @@ void loop() {
     } else if (currentPhase == ECCENTRIC) {
         // Check for return to concentric direction = REP COMPLETE
         bool returnedToConcentric = concentricIsPositive
-                                        ? (currentGyroZ > DIRECTION_THRESHOLD)
-                                        : (currentGyroZ < -DIRECTION_THRESHOLD);
+                                        ? (currentGyroX > DIRECTION_THRESHOLD)
+                                        : (currentGyroX < -DIRECTION_THRESHOLD);
 
         if (returnedToConcentric) {
             currentPhase = CONCENTRIC;
@@ -468,7 +488,7 @@ void loop() {
         }
     }
 
-    lastGyroZ = currentGyroZ;
+    lastGyroX = currentGyroX;
 
     // Send state via WebSocket ONLY when phase OR failure state changes
     bool stateChanged =
