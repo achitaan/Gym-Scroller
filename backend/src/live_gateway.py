@@ -19,8 +19,10 @@ class LiveGateway:
         self.sio = sio
         self.calculation_service = calculation_service
         self.connected_clients: Dict[str, Any] = {}
+        self.last_pong_times: Dict[str, datetime] = {}
         self.update_task: asyncio.Task = None
         self.stale_monitor_task: asyncio.Task = None
+        self.health_broadcast_task: asyncio.Task = None
 
         # Real-time plotting data storage
         self.max_points = 500  # Keep last 500 points
@@ -60,15 +62,42 @@ class LiveGateway:
 
         @self.sio.event
         async def connect(sid, environ):
+            # Parse query string for reconnection detection
+            query_string = environ.get('QUERY_STRING', '')
+            prev_sid = None
+            is_reconnection = False
+
+            # Simple query string parsing
+            if 'prev_sid=' in query_string:
+                params = query_string.split('&')
+                for param in params:
+                    if param.startswith('prev_sid='):
+                        prev_sid = param.split('=')[1]
+                        if prev_sid in self.connected_clients:
+                            is_reconnection = True
+                            print(f"🔄 Reconnection detected - previous sid: {prev_sid}")
+                        break
+
             print(f"🟢 Client connected: {sid}")
+
             # Track connection state with detailed metadata
             self.connected_clients[sid] = {
                 "connected_at": datetime.now(),
                 "chunks_received": 0,
                 "last_chunk_time": datetime.now(),
+                "is_reconnection": is_reconnection,
+                "prev_sid": prev_sid,
+                "reconnection_count": 0,
+                "errors": 0,
+                "timeouts": 0,
             }
+
             # Send connection acknowledgment to client
-            await self.sio.emit("connection_ack", {"status": "connected", "sid": sid}, room=sid)
+            await self.sio.emit("connection_ack", {
+                "status": "connected",
+                "sid": sid,
+                "is_reconnection": is_reconnection
+            }, room=sid)
             print(f"✅ Connection acknowledged for {sid}")
 
         @self.sio.event
@@ -78,11 +107,39 @@ class LiveGateway:
                 client_info = self.connected_clients[sid]
                 duration = (datetime.now() - client_info["connected_at"]).total_seconds()
                 chunks = client_info["chunks_received"]
-                print(f"🔴 Client disconnected: {sid}")
+
+                # Detect graceful vs unexpected disconnects
+                is_graceful = duration < 1
+                disconnect_type = 'graceful' if is_graceful else 'unexpected'
+
+                print(f"🔴 Client disconnected: {sid} ({disconnect_type})")
                 print(f"   Duration: {duration:.1f}s | Chunks processed: {chunks}")
+
+                # Clean up tracking data
                 del self.connected_clients[sid]
+                if sid in self.last_pong_times:
+                    del self.last_pong_times[sid]
             else:
                 print(f"🔴 Client disconnected: {sid} (no session data)")
+
+        @self.sio.event
+        async def heartbeat(sid, data):
+            """
+            Respond to client heartbeat to keep connection active.
+            This ensures NAT mappings stay alive and connection health is verified.
+            Heartbeat every 5 seconds keeps routers from timing out connections.
+            """
+            if sid in self.connected_clients:
+                # Update last activity time
+                self.connected_clients[sid]["last_chunk_time"] = datetime.now()
+                self.last_pong_times[sid] = datetime.now()
+
+                # Echo back with server timestamp for latency calculation
+                await self.sio.emit("heartbeat_ack", {
+                    "client_ts": data.get("timestamp"),
+                    "server_ts": datetime.now().timestamp() * 1000,
+                    "sid": sid
+                }, room=sid)
 
         @self.sio.event
         async def startSet(sid, data):
@@ -134,6 +191,8 @@ class LiveGateway:
                 )
             except asyncio.TimeoutError:
                 # Processing took too long - log error and notify client
+                if sid in self.connected_clients:
+                    self.connected_clients[sid]["timeouts"] += 1
                 print(f"❌ Processing timeout for {sid} - chunk took >2s to process")
                 await self.sio.emit("processing_error", {
                     "error": "timeout",
@@ -142,6 +201,8 @@ class LiveGateway:
                 }, room=sid)
             except Exception as e:
                 # General error handling - catch all exceptions to prevent crashes
+                if sid in self.connected_clients:
+                    self.connected_clients[sid]["errors"] += 1
                 print(f"❌ Error processing sensor data from {sid}: {str(e)}")
                 await self.sio.emit("processing_error", {
                     "error": "processing_failed",
@@ -332,6 +393,7 @@ class LiveGateway:
         """
         Monitor and disconnect stale connections that haven't sent data recently.
         Runs every 30 seconds and disconnects clients inactive for >120 seconds.
+        Also checks for heartbeat timeout (>60 seconds without heartbeat).
         """
         while True:
             try:
@@ -340,23 +402,35 @@ class LiveGateway:
                 now = datetime.now()
                 stale_clients = []
 
-                # Find stale connections (no data for 120+ seconds)
+                # Find stale connections (no data for 120+ seconds or no heartbeat for 60+ seconds)
                 for sid, client_info in self.connected_clients.items():
                     inactive_duration = (now - client_info["last_chunk_time"]).total_seconds()
+                    reason = None
 
+                    # Check for data inactivity
                     if inactive_duration > 120:  # 2 minutes of inactivity
-                        stale_clients.append((sid, inactive_duration))
+                        reason = "data_inactivity"
+                        stale_clients.append((sid, inactive_duration, reason))
+                    # Check for heartbeat timeout
+                    elif sid in self.last_pong_times:
+                        heartbeat_age = (now - self.last_pong_times[sid]).total_seconds()
+                        if heartbeat_age > 60:  # 60 seconds without heartbeat
+                            reason = "ping_timeout"
+                            stale_clients.append((sid, heartbeat_age, reason))
 
                 # Disconnect stale clients
-                for sid, inactive_duration in stale_clients:
+                for sid, duration, reason in stale_clients:
+                    if sid not in self.connected_clients:
+                        continue
+
                     chunks = self.connected_clients[sid]["chunks_received"]
-                    print(f"⚠️  Disconnecting stale client {sid}")
-                    print(f"   Inactive for {inactive_duration:.1f}s | Chunks received: {chunks}")
+                    print(f"⚠️  Disconnecting stale client {sid} (reason: {reason})")
+                    print(f"   Inactive for {duration:.1f}s | Chunks received: {chunks}")
 
                     # Notify client before disconnecting
                     await self.sio.emit("connection_timeout", {
-                        "reason": "inactivity",
-                        "inactive_seconds": inactive_duration
+                        "reason": reason,
+                        "inactive_seconds": duration
                     }, room=sid)
 
                     # Disconnect the client
@@ -371,11 +445,31 @@ class LiveGateway:
                 # Continue monitoring despite errors
                 await asyncio.sleep(5)
 
+    async def broadcast_health_status(self):
+        """Broadcast server health status every 60 seconds"""
+        while True:
+            try:
+                await asyncio.sleep(60)
+
+                health = {
+                    "status": "healthy",
+                    "timestamp": datetime.now().isoformat(),
+                    "connected_clients": len(self.connected_clients)
+                }
+
+                await self.sio.emit("server_health", health)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"❌ Error broadcasting health: {str(e)}")
+
     def start_background_tasks(self):
-        """Start background tasks (stale connection monitoring)"""
+        """Start background tasks (stale connection monitoring, health broadcast)"""
         # self.update_task = asyncio.create_task(self.start_mock_events())  # Disabled - using real ESP8266 data
         self.stale_monitor_task = asyncio.create_task(self.monitor_stale_connections())
-        print("✅ Background tasks started (stale connection monitor)")
+        self.health_broadcast_task = asyncio.create_task(self.broadcast_health_status())
+        print("✅ Background tasks started (stale connection monitor, health broadcast)")
 
     def reset_plot_data(self):
         """Reset all plot data (useful for starting a new set)"""
@@ -400,6 +494,14 @@ class LiveGateway:
             self.stale_monitor_task.cancel()
             try:
                 await self.stale_monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel health broadcast task
+        if self.health_broadcast_task:
+            self.health_broadcast_task.cancel()
+            try:
+                await self.health_broadcast_task
             except asyncio.CancelledError:
                 pass
 

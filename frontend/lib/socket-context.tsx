@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { RepEvent, SetUpdate, SetEnd, ShortsQueue } from './types';
 import { adEventBus } from './ad-event-bus';
@@ -14,6 +14,9 @@ interface SocketContextValue {
   lastSetEnd: SetEnd | null;
   shortsQueue: string[];
   sensorState: 'waiting' | 'concentric' | 'eccentric' | 'failure' | null;
+  latency: number | null;
+  isConnected: boolean;
+  showDisconnectedWarning: boolean;
   subscribeToReps: (callback: (rep: RepEvent) => void) => () => void;
   subscribeToSetUpdates: (callback: (update: SetUpdate) => void) => () => void;
   subscribeToSetEnd: (callback: (end: SetEnd) => void) => () => void;
@@ -46,6 +49,13 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
   const [lastSetEnd, setLastSetEnd] = useState<SetEnd | null>(null);
   const [shortsQueue, setShortsQueue] = useState<string[]>([]);
   const [sensorState, setSensorState] = useState<'waiting' | 'concentric' | 'eccentric' | 'failure' | null>(null);
+  const [latency, setLatency] = useState<number | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [showDisconnectedWarning, setShowDisconnectedWarning] = useState(false);
+
+  // Refs for connection management
+  const disconnectTimerRef = useRef<NodeJS.Timeout>();
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout>();
 
   // Initialize socket connection
   useEffect(() => {
@@ -56,7 +66,7 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
       reconnectionAttempts: Infinity,        // Keep trying forever
       reconnectionDelay: 500,                // Start quickly (500ms)
       reconnectionDelayMax: 3000,            // Max 3s between attempts
-      timeout: 60000,                        // 60s connection timeout (matches backend ping_timeout=90s)
+      timeout: 20000,                        // 20s connection timeout
       // Additional stability settings
       autoConnect: true,
       forceNew: false,
@@ -64,16 +74,32 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
       upgrade: false,                        // Prevent polling fallback issues
       rememberUpgrade: true,                 // Remember successful upgrades
       path: '/socket.io/',                   // Explicit path for socket.io endpoint
+      // Note: ping/pong settings are handled by the server and automatically
+      // applied to the client during the handshake
     });
 
     socketInstance.on('connect', () => {
       console.log('✅ [Socket] Connected to backend');
       setConnected(true);
+      setIsConnected(true);
+
+      // Cancel warning if we reconnect quickly
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current);
+      }
+      setShowDisconnectedWarning(false);
     });
 
     socketInstance.on('disconnect', (reason) => {
       console.log(`🔴 [Socket] Disconnected: ${reason}`);
       setConnected(false);
+      setIsConnected(false);
+
+      // Don't immediately show warning - give 5s grace period
+      disconnectTimerRef.current = setTimeout(() => {
+        setShowDisconnectedWarning(true);
+        console.log('⚠️  Connection lost - showing user warning');
+      }, 5000);
 
       // Force reconnect if server initiated disconnect or transport closed
       if (reason === 'io server disconnect' || reason === 'transport close') {
@@ -191,7 +217,30 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
       adEventBus.dismissAd();
     });
 
+    // Server health status
+    socketInstance.on('server_health', (health: any) => {
+      console.log('💚 [Socket] Server health:', health);
+    });
+
     setSocket(socketInstance);
+
+    // Implement application-layer heartbeat (every 5 seconds)
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (socketInstance.connected) {
+        const sendTime = Date.now();
+
+        socketInstance.emit('heartbeat', {
+          timestamp: sendTime
+        });
+
+        // Measure latency on response
+        socketInstance.once('heartbeat_ack', (data: any) => {
+          const roundTripTime = Date.now() - sendTime;
+          setLatency(roundTripTime);
+          console.log(`💓 [Socket] Heartbeat RTT: ${roundTripTime}ms`);
+        });
+      }
+    }, 5000); // Every 5 seconds
 
     // Handle page visibility changes (reconnect when tab becomes active)
     const handleVisibilityChange = () => {
@@ -223,6 +272,15 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
 
     return () => {
       console.log('🧹 [Socket] Cleaning up connection');
+
+      // Clear timers
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current);
+      }
+
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -278,6 +336,9 @@ export function SocketProvider({ children, url = DEFAULT_BACKEND_URL }: SocketPr
     lastSetEnd,
     shortsQueue,
     sensorState,
+    latency,
+    isConnected,
+    showDisconnectedWarning,
     subscribeToReps,
     subscribeToSetUpdates,
     subscribeToSetEnd,

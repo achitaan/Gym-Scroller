@@ -24,10 +24,16 @@ sio = socketio.AsyncServer(
     logger=True,
     engineio_logger=True,
     # Aggressive keepalive settings for real-time streaming
-    ping_timeout=90,  # 90 seconds - handle mobile network delays and brief disconnections
-    ping_interval=20,  # 20 seconds - frequent keepalives to detect dead connections quickly
+    # Extended timeouts to survive NAT timeouts and router connection tracking timeouts
+    ping_timeout=180,  # 180 seconds (3 minutes) - handle NAT timeouts and network delays
+    ping_interval=20,  # 20 seconds - frequent keepalives to maintain NAT mappings
     max_http_buffer_size=5 * 1024 * 1024,  # 5MB buffer for chunked IMU data
     compression_threshold=512,  # Compress messages > 512 bytes to reduce bandwidth
+    # Force WebSocket-only transport to avoid polling fallback issues
+    allow_upgrades=False,  # Prevent transport switching which can cause disconnects
+    # Additional engineio settings for connection stability
+    http_compression=True,  # Enable compression for better bandwidth usage
+    websocket_compression=True,  # Enable WebSocket compression
 )
 
 # Services (initialized after app creation)
@@ -198,4 +204,8 @@ if __name__ == "__main__":
         port=port,
         reload=True,
         log_level="info",
+        # WebSocket keepalive settings to prevent connection drops
+        ws_ping_interval=20.0,  # Send WebSocket ping every 20 seconds
+        ws_ping_timeout=180.0,  # Wait up to 180 seconds for pong response
+        timeout_keep_alive=300,  # Keep HTTP connections alive for 5 minutes
     )
