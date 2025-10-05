@@ -151,9 +151,10 @@ export function SetSummarySheet({ summary, onLog, onEdit, onShare, onClose }: Se
         <div className="space-y-3">
           <button
             onClick={onLog}
-            className="w-full py-4 rounded-xl font-semibold text-white active:opacity-80"
+            className="w-full py-4 rounded-xl font-semibold active:opacity-80"
             style={{
               backgroundColor: tokens.colors.accent.primary,
+              color: '#000',
               minHeight: tokens.touchTarget.min,
             }}
           >

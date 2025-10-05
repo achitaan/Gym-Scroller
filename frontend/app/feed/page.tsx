@@ -30,6 +30,10 @@ export default function FeedPage() {
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const audioEl = useRef<HTMLAudioElement | null>(null);
+  const [musicUrl, setMusicUrl] = useState<string | null>(null);
+  const [musicStart, setMusicStart] = useState<number>(0);
+  const musicFallbackTriedRef = useRef(false);
 
   // Ad system integration
   const {
@@ -93,6 +97,22 @@ export default function FeedPage() {
       const parsed = JSON.parse(json);
       if (parsed && parsed.exercises) {
         setIncomingPreset(parsed);
+        // When a workout starts via preset, try to load a random mp3
+        const startParam = searchParams.get('musicStart');
+        if (startParam) {
+          const parts = startParam.split(':').map(Number);
+          if (parts.length === 2 && parts.every(n => !isNaN(n))) setMusicStart(parts[0] * 60 + parts[1]);
+          else if (!isNaN(Number(startParam))) setMusicStart(Number(startParam));
+        }
+        const specific = searchParams.get('musicFile');
+        if (specific) {
+          const url = `/music/${specific}`;
+          setMusicUrl(url);
+        } else {
+          // Default to the lofi track; if it fails, we'll fallback via audio error handler
+          const defaultUrl = '/music/10-minutes-relax-and-study-with-me.mp3';
+          setMusicUrl(defaultUrl);
+        }
       }
     } catch (e) {
       console.warn('Failed to decode preset', e);
@@ -216,7 +236,69 @@ export default function FeedPage() {
     };
   }, [audioUnlocked]);
 
-  // As soon as audio is unlocked and preference is unmuted, unmute the current video
+  // When we have a music URL and audio is unlocked, try to play it; if it fails, fallback to a random track once
+  useEffect(() => {
+    if (!musicUrl) return;
+    if (!audioUnlocked) return;
+    const el = audioEl.current;
+    if (!el) return;
+    const onError = async () => {
+      if (musicFallbackTriedRef.current) return;
+      musicFallbackTriedRef.current = true;
+      try {
+        const r = await fetch('/api/music/list', { cache: 'no-store' });
+        const j = await r.json();
+        const arr: string[] = j?.files || [];
+        if (arr.length > 0) {
+          // Try to pick best match for "lofi relax study 10"
+          const keys = ['lofi', 'relax', 'study', '10'];
+          const best = arr
+            .map((u) => ({ u, name: decodeURIComponent(u.split('/').pop() || '').toLowerCase() }))
+            .sort((a, b) => {
+              const score = (n: string) => keys.reduce((s, k) => s + (n.includes(k) ? 1 : 0), 0);
+              return score(b.name) - score(a.name);
+            })[0];
+          if (best) setMusicUrl(best.u);
+          else setMusicUrl(arr[Math.floor(Math.random() * arr.length)]);
+        } else {
+          console.warn('No MP3s found under /public/music');
+        }
+      } catch {}
+    };
+    const onLoaded = async () => {
+      try {
+        el.currentTime = Math.max(0, musicStart || 0);
+        await el.play();
+      } catch {
+        // ignored
+      }
+    };
+    const play = async () => {
+      try {
+        el.pause();
+        el.src = musicUrl;
+        el.removeEventListener('error', onError as any);
+        el.removeEventListener('loadedmetadata', onLoaded as any);
+        el.addEventListener('error', onError as any, { once: true });
+        el.addEventListener('loadedmetadata', onLoaded as any, { once: true });
+        // If metadata already available, attempt immediate play
+        if (el.readyState >= 1) {
+          await onLoaded();
+        }
+      } catch (e) {
+        // ignored; user can tap to start
+      }
+    };
+    play();
+    return () => {
+      if (el) {
+        el.removeEventListener('error', onError as any);
+        el.removeEventListener('loadedmetadata', onLoaded as any);
+      }
+    };
+  }, [musicUrl, audioUnlocked, musicStart]);
+
+  // As soon as audio is unlocked and preference is unmuted, unmute the current video (allow alongside our music)
   useEffect(() => {
     if (isAdShowing) return; // don't affect feed while ad is showing
     if (audioUnlocked) {
@@ -230,8 +312,10 @@ export default function FeedPage() {
   useEffect(() => {
     if (isAdShowing) return; // don't auto-play feed while ad is shown
     const timeouts = [100, 400, 1000].map((t) => setTimeout(() => {
-      // Ensure it's muted to comply with autoplay policies
-      sendYTCommand(currentIndex, 'mute');
+      // Only force mute if audio hasn't been unlocked yet (autoplay policies)
+      if (!audioUnlocked) {
+        sendYTCommand(currentIndex, 'mute');
+      }
       sendYTCommand(currentIndex, 'playVideo');
       // If audio is unlocked, unmute
       if (audioUnlocked) {
@@ -270,7 +354,7 @@ export default function FeedPage() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 rounded-full backdrop-blur-md bg-black/60 text-white hover:bg-black/80"
+        className="fixed top-4 left-4 z-50 rounded-full backdrop-blur-md bg-black/60 text-neutral-100 hover:bg-black/80"
         onClick={() => router.back()}
       >
         <ArrowLeft className="h-5 w-5" />
@@ -296,14 +380,14 @@ export default function FeedPage() {
 
       {/* Video counter */}
       {videos.length > 0 && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-black/50 backdrop-blur-sm rounded-full text-white text-sm">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-black/50 backdrop-blur-sm rounded-full text-neutral-100 text-sm">
           {currentIndex + 1} / {videos.length}
         </div>
       )}
 
       {/* Incoming preset summary (special instance) */}
       {incomingPreset && (
-        <div className="fixed top-16 left-4 z-50 p-3 rounded-lg bg-white/6 backdrop-blur-md text-white w-80 max-w-[calc(50vw-2rem)]">
+  <div className="fixed top-16 left-4 z-50 p-3 rounded-lg bg-white/6 backdrop-blur-md text-neutral-100 w-80 max-w-[calc(50vw-2rem)]">
           <div className="flex items-center justify-between mb-2">
             <div className="font-medium">Starting Workout</div>
             <div className="text-sm text-neutral-300">{incomingPreset.exercises.length} exercises</div>
@@ -358,7 +442,7 @@ export default function FeedPage() {
                 router.push('/workout-summary');
               }
             }}
-            className="w-full py-2 px-3 rounded-lg bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-white text-sm font-medium transition-colors"
+            className="w-full py-2 px-3 rounded-lg bg-red-600/80 hover:bg-red-600 active:bg-red-700 text-neutral-100 text-sm font-medium transition-colors"
           >
             End Workout
           </button>
@@ -386,12 +470,12 @@ export default function FeedPage() {
             {/* Video iframe */}
             <div className="w-full h-full max-w-[500px] mx-auto relative">
               <iframe
-                key={`iframe-${video.id}-${index === currentIndex ? 'active' : 'inactive'}-${hasUserInteracted ? 'interacted' : 'initial'}`}
+                key={`iframe-${video.id}-${index === currentIndex ? 'active' : 'inactive'}-${hasUserInteracted ? 'interacted' : 'initial'}-${audioUnlocked ? 'unlocked' : 'locked'}`}
                 ref={(el) => {
                   iframeRefs.current[index] = el;
                 }}
                 src={index === currentIndex 
-                  ? `${video.embedUrl}?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
+                  ? `${video.embedUrl}?autoplay=1&mute=${audioUnlocked ? 0 : 1}&controls=1&modestbranding=1&rel=0&loop=1&playlist=${video.id}&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
                   : `${video.embedUrl}?autoplay=0&mute=1&controls=1&modestbranding=1&rel=0&enablejsapi=1&origin=${encodeURIComponent(origin)}`
                 }
                 className="w-full h-full"
@@ -414,7 +498,7 @@ export default function FeedPage() {
               )}
 
               {/* Video info overlay */}
-              <div className="absolute bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
+              <div className="absolute bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-neutral-100">
                 <h2 className="text-lg font-semibold mb-1 line-clamp-2">
                   {video.title}
                 </h2>
@@ -430,14 +514,14 @@ export default function FeedPage() {
                 <button
                   onClick={goToPrevious}
                   disabled={currentIndex === 0}
-                  className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed backdrop-blur-sm text-white"
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed backdrop-blur-sm text-neutral-100"
                 >
                   ↑
                 </button>
                 <button
                   onClick={goToNext}
                   disabled={currentIndex >= videos.length - 1 && loading}
-                  className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 backdrop-blur-sm text-white"
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 backdrop-blur-sm text-neutral-100"
                 >
                   {loading && currentIndex >= videos.length - 1 ? (
                     <RefreshCw className="h-5 w-5 animate-spin" />
@@ -475,7 +559,10 @@ export default function FeedPage() {
       )}
 
       {/* Bottom Navigation */}
-      <Navbar />
+  <Navbar />
+
+  {/* Hidden audio element for workout music (no UI) */}
+  <audio ref={audioEl} autoPlay playsInline preload="auto" style={{ display: 'none' }} />
 
       {/* Ad Overlay */}
       {isAdShowing && currentAd && (

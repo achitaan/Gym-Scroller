@@ -50,7 +50,9 @@ export function PreSetSheet({ onStart, onClose }: PreSetSheetProps) {
       const payload = JSON.stringify({ exercises: exercisesState });
       // UTF-8 safe base64
       const b64 = typeof window !== 'undefined' ? window.btoa(unescape(encodeURIComponent(payload))) : '';
-      router.push(`/feed?preset=${encodeURIComponent(b64)}`);
+      // Request a specific local mp3 if available in public/music
+  const musicFile = '10-minutes-relax-and-study-with-me.mp3';
+      router.push(`/feed?preset=${encodeURIComponent(b64)}&musicFile=${encodeURIComponent(musicFile)}`);
     } catch (e) {
       // fallback: just navigate without payload
       router.push('/feed');
@@ -245,9 +247,10 @@ export function PreSetSheet({ onStart, onClose }: PreSetSheetProps) {
         {/* Start Button */}
         <button
           onClick={handleStart}
-          className="w-full py-4 rounded-xl font-semibold text-white active:opacity-80"
+          className="w-full py-4 rounded-xl font-semibold active:opacity-80"
           style={{
             backgroundColor: tokens.colors.accent.primary,
+            color: '#000',
             minHeight: tokens.touchTarget.min,
           }}
         >
